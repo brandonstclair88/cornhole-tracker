@@ -168,7 +168,23 @@ function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, p
   );
 }
 
-// ---- LOG GAME ----
+// ---- STEPPER ----
+function Stepper({ value, onChange, max = 4 }) {
+  const val = parseInt(value) || 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+      <button
+        onClick={() => onChange(Math.max(0, val - 1))}
+        style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: 'var(--text2)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
+      >−</button>
+      <span style={{ width: 28, textAlign: 'center', fontFamily: 'var(--font-display)', fontSize: 20, color: val > 0 ? 'var(--text)' : 'var(--text3)', userSelect: 'none' }}>{val}</span>
+      <button
+        onClick={() => onChange(Math.min(max, val + 1))}
+        style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: 'var(--text2)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
+      >+</button>
+    </div>
+  );
+}
 function emptyRound() {
   return { t1p1h: '', t1p1b: '', t1p2h: '', t1p2b: '', t2p1h: '', t2p1b: '', t2p2h: '', t2p2b: '' };
 }
@@ -322,13 +338,13 @@ function LogGame({ players, onGameLogged, toast }) {
                   T{team} · {label}
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <div className="form-group" style={{ flex: 1 }}>
+                  <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
                     <label>🕳 Hole</label>
-                    <input type="number" min="0" max="4" value={r[hk]} placeholder="0" onChange={e => setRoundVal(ri, hk, e.target.value)} style={{ textAlign: 'center' }} />
+                    <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
                   </div>
-                  <div className="form-group" style={{ flex: 1 }}>
+                  <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
                     <label>Board</label>
-                    <input type="number" min="0" max="4" value={r[bk]} placeholder="0" onChange={e => setRoundVal(ri, bk, e.target.value)} style={{ textAlign: 'center' }} />
+                    <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
                   </div>
                 </div>
               </div>
