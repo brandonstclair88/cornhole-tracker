@@ -798,6 +798,34 @@ export default function App() {
       const loseScore = t1wins ? game.t2_score : game.t1_score;
       const margin = winScore - loseScore;
 
+      const t1hole = (game.t1_p1_hole||0) + (game.t1_p2_hole||0);
+      const t1board = (game.t1_p1_board||0) + (game.t1_p2_board||0);
+      const t2hole = (game.t2_p1_hole||0) + (game.t2_p2_hole||0);
+      const t2board = (game.t2_p1_board||0) + (game.t2_p2_board||0);
+      const totalBags = t1hole + t1board + t2hole + t2board;
+      const totalHole = t1hole + t2hole;
+      const winHole = t1wins ? t1hole : t2hole;
+      const loseHole = t1wins ? t2hole : t1hole;
+      const winBoard = t1wins ? t1board : t2board;
+      const loseBoard = t1wins ? t2board : t1board;
+
+      const isBlowout = margin >= 9;
+      const isClose = margin <= 2;
+      const lowScoring = winScore <= 5;
+      const bothBad = totalHole <= 2 && totalBags > 8;
+      const winnersAllHoles = winHole >= 4 && winBoard <= 1;
+      const losersDrought = loseHole === 0;
+
+      let context = '';
+      if (lowScoring && isClose) context = 'Both teams were absolutely terrible — nobody could score. Make fun of both teams equally for putting on a pathetic display.';
+      else if (lowScoring && isBlowout) context = `${winners} dominated but scored almost nothing. Make fun of everyone for being bad at cornhole.`;
+      else if (bothBad) context = 'Tons of bags were thrown but almost none went in the hole. Both teams were awful. Roast everyone for their terrible aim.';
+      else if (losersDrought && isBlowout) context = `${losers} got absolutely zero holes the whole game. They were humiliated. Be savage.`;
+      else if (winnersAllHoles) context = `${winners} were surgical — almost all their bags went in the hole. Hype them up as legends.`;
+      else if (isBlowout) context = `Total blowout. ${losers} got destroyed. Be absolutely savage about the losers.`;
+      else if (isClose) context = 'Extremely close game, came down to the wire. Make it sound like the most dramatic moment in sports history.';
+      else context = `Solid win for ${winners}. Be cocky about the winners and throw mild shade at the losers.`;
+
       setGameResult(`${winners} beat ${losers} ${winScore}–${loseScore}...`);
 
       try {
@@ -815,12 +843,13 @@ export default function App() {
             max_tokens: 120,
             messages: [{
               role: 'user',
-              content: `You are a trash-talking sports announcer for a work cornhole league. Write ONE short notification (1-2 sentences, no quotes, no emojis) about this game result. Be funny, savage, and use their actual names. DO NOT just state the score — roast the losers or hype the winners.
+              content: `You are a trash-talking sports announcer for a work cornhole league. Write ONE short notification (1-2 sentences, no quotes, no emojis) about this game. Be funny, savage, and use their actual names. DO NOT just state the score.
 
-Winners: ${winners}
-Losers: ${losers}
-Score: ${winScore}-${loseScore}
-${margin >= 9 ? 'Total blowout. Be absolutely savage and merciless about the losers.' : margin <= 2 ? 'Extremely close game. Make it sound like the most dramatic moment in sports history.' : 'Solid win. Be cocky about the winners and throw shade at the losers.'}`
+Winners: ${winners} (score: ${winScore}, holes: ${winHole}, on board: ${winBoard})
+Losers: ${losers} (score: ${loseScore}, holes: ${loseHole}, on board: ${loseBoard})
+Total bags thrown: ${totalBags}, total holes: ${totalHole}
+
+Tone: ${context}`
             }]
           })
         });
