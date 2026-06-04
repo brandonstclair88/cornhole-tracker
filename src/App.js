@@ -277,26 +277,32 @@ function LogGame({ players, onGameLogged, toast }) {
       <div className="card-title">Log a Game</div>
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="team-grid">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div>
-          <div className="form-group" style={{ marginBottom: 8 }}>
-            <label>Team 1 — Player A</label>
-            <select value={t1p1} onChange={e => setT1p1(e.target.value)}>{playerOptions}</select>
-          </div>
-          <div className="form-group">
-            <label>Player B</label>
-            <select value={t1p2} onChange={e => setT1p2(e.target.value)}>{playerOptions}</select>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500, marginBottom: 6 }}>Team 1</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div className="form-group">
+              <label>Player A</label>
+              <select value={t1p1} onChange={e => setT1p1(e.target.value)}>{playerOptions}</select>
+            </div>
+            <div className="form-group">
+              <label>Player B</label>
+              <select value={t1p2} onChange={e => setT1p2(e.target.value)}>{playerOptions}</select>
+            </div>
           </div>
         </div>
-        <div className="vs-label">VS</div>
+        <div style={{ textAlign: 'center', fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--text3)', padding: '2px 0' }}>VS</div>
         <div>
-          <div className="form-group" style={{ marginBottom: 8 }}>
-            <label>Team 2 — Player A</label>
-            <select value={t2p1} onChange={e => setT2p1(e.target.value)}>{playerOptions}</select>
-          </div>
-          <div className="form-group">
-            <label>Player B</label>
-            <select value={t2p2} onChange={e => setT2p2(e.target.value)}>{playerOptions}</select>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--green)', fontWeight: 500, marginBottom: 6 }}>Team 2</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div className="form-group">
+              <label>Player A</label>
+              <select value={t2p1} onChange={e => setT2p1(e.target.value)}>{playerOptions}</select>
+            </div>
+            <div className="form-group">
+              <label>Player B</label>
+              <select value={t2p2} onChange={e => setT2p2(e.target.value)}>{playerOptions}</select>
+            </div>
           </div>
         </div>
       </div>
