@@ -83,7 +83,7 @@ function Leaderboard({ players, games, onRefresh, toast }) {
             <table>
               <thead>
                 <tr>
-                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>🕳 Hole</th><th>Board</th>
+                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>Hole</th><th>Board</th>
                 </tr>
               </thead>
               <tbody>
@@ -157,7 +157,7 @@ function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, p
       <Avatar name={label} index={pIndex >= 0 ? pIndex : playerIndex} size={26} />
       <span style={{ fontSize: 13, color: 'var(--text2)', minWidth: 70, flex: 1 }}>{label}</span>
       <div className="form-group" style={{ flex: 'unset', minWidth: 0 }}>
-        <label>🕳 Hole</label>
+        <label>Hole</label>
         <input type="number" min="0" max="4" value={hole} onChange={e => onHole(e.target.value)} style={{ width: 60, textAlign: 'center' }} />
       </div>
       <div className="form-group" style={{ flex: 'unset', minWidth: 0 }}>
@@ -243,6 +243,10 @@ function LogGame({ players, onGameLogged, toast }) {
     const selected = [t1p1, t1p2, t2p1, t2p2];
     if (selected.some(v => !v)) { setError('Please select all 4 players.'); return; }
     if (new Set(selected).size < 4) { setError('Each player must be unique across both teams.'); return; }
+
+    const t1name = `${names.t1p1} & ${names.t1p2}`;
+    const t2name = `${names.t2p1} & ${names.t2p2}`;
+    if (!window.confirm(`Log this game?\n\n${t1name}  ${t1score} – ${t2score}  ${t2name}`)) return;
 
     const t1p1h = sumKey('t1p1h'), t1p1b = sumKey('t1p1b');
     const t1p2h = sumKey('t1p2h'), t1p2b = sumKey('t1p2b');
@@ -368,11 +372,15 @@ function LogGame({ players, onGameLogged, toast }) {
                   <div style={{ fontSize: 12, color: team === 1 ? 'var(--accent)' : 'var(--green)', fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {label}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>🕳</span>
-                    <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
-                    <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 4 }}>Board</span>
-                    <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                      <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
+                      <span style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Hole</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                      <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
+                      <span style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Board</span>
+                    </div>
                   </div>
                 </div>
               ));
@@ -404,7 +412,11 @@ function LogGame({ players, onGameLogged, toast }) {
         })}
       </div>
 
-      <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+      <button className="btn btn-primary" onClick={() => {
+        if (window.confirm(`Log this game?\n\nTeam 1: ${names.t1p1} & ${names.t1p2}\nTeam 2: ${names.t2p1} & ${names.t2p2}\nScore: ${t1score} – ${t2score}`)) {
+          handleSubmit();
+        }
+      }} disabled={saving}>
         {saving ? 'Saving...' : 'Log Game →'}
       </button>
     </div>
@@ -636,7 +648,7 @@ function MasterCornholer({ players, games }) {
                 <div className="stat-box-val">{Math.round(leaderStats.wins / (leaderStats.wins + leaderStats.losses) * 100)}%</div>
               </div>
               <div className="stat-box" style={{ minWidth: 90 }}>
-                <div className="stat-box-label">🕳 Hole</div>
+                <div className="stat-box-label">Hole</div>
                 <div className="stat-box-val">{leaderStats.hole}</div>
               </div>
             </div>
@@ -650,7 +662,7 @@ function MasterCornholer({ players, games }) {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>🕳 Hole</th><th>Board</th></tr>
+                <tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Hole</th><th>Board</th></tr>
               </thead>
               <tbody>
                 {sorted.map((p, i) => {
