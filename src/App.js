@@ -328,33 +328,39 @@ function LogGame({ players, onGameLogged, toast }) {
       {rounds.map((r, ri) => (
         <div key={ri} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px', marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500 }}>Round {ri + 1}</span>
+            <div>
+              <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500 }}>Round {ri + 1}</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 8 }}>
+                {ri % 2 === 0 ? `${names.t1p1} vs ${names.t2p1}` : `${names.t1p2} vs ${names.t2p2}`}
+              </span>
+            </div>
             {rounds.length > 1 && <button className="btn btn-sm btn-danger" onClick={() => removeRound(ri)}>✕</button>}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {[
-              { label: names.t1p1, hk: 't1p1h', bk: 't1p1b', team: 1 },
-              { label: names.t1p2, hk: 't1p2h', bk: 't1p2b', team: 1 },
-              { label: names.t2p1, hk: 't2p1h', bk: 't2p1b', team: 2 },
-              { label: names.t2p2, hk: 't2p2h', bk: 't2p2b', team: 2 },
-            ].map(({ label, hk, bk, team }) => (
-              <div key={hk} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '8px 10px', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, color: team === 1 ? 'var(--accent)' : 'var(--green)', marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  T{team} · {label}
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
-                    <label>🕳 Hole</label>
-                    <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
+            {(() => {
+              const isOdd = ri % 2 === 0;
+              const throwers = isOdd
+                ? [{ label: names.t1p1, hk: 't1p1h', bk: 't1p1b', team: 1 }, { label: names.t2p1, hk: 't2p1h', bk: 't2p1b', team: 2 }]
+                : [{ label: names.t1p2, hk: 't1p2h', bk: 't1p2b', team: 1 }, { label: names.t2p2, hk: 't2p2h', bk: 't2p2b', team: 2 }];
+              return throwers.map(({ label, hk, bk, team }) => (
+                <div key={hk} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '8px 10px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, color: team === 1 ? 'var(--accent)' : 'var(--green)', marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    T{team} · {label}
                   </div>
-                  <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
-                    <label>Board</label>
-                    <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
+                      <label>🕳 Hole</label>
+                      <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
+                    </div>
+                    <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
+                      <label>Board</label>
+                      <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         </div>
       ))}
