@@ -605,7 +605,17 @@ export default function App() {
     <>
       <header className="header">
         <div className="header-inner">
-          <div className="logo">🎯 <span>Cornhole</span></div>
+          <div className="logo" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="5" width="26" height="16" rx="2" fill="#5a3e1b" stroke="#7a5a2a" strokeWidth="1.5"/>
+              <rect x="1" y="5" width="26" height="4" rx="2" fill="#6b4a20" stroke="#7a5a2a" strokeWidth="1.5"/>
+              <ellipse cx="14" cy="14" rx="4.5" ry="4.5" fill="#111" stroke="#333" strokeWidth="1"/>
+              <ellipse cx="14" cy="14" rx="2" ry="2" fill="#1a1a1a"/>
+              <line x1="4" y1="2" x2="8" y2="5" stroke="#7a5a2a" strokeWidth="2" strokeLinecap="round"/>
+              <line x1="24" y1="2" x2="20" y2="5" stroke="#7a5a2a" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            <span>Cornhole</span>
+          </div>
         </div>
       </header>
       <nav className="nav">
