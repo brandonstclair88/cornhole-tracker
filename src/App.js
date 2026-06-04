@@ -767,13 +767,23 @@ export default function App() {
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.REACT_APP_ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 100,
           messages: [{
             role: 'user',
-            content: `Write a single short witty in-app notification (1-2 sentences max, no quotes) announcing a cornhole game result. Winners: ${winners}. Losers: ${losers}. Score: ${winScore}-${loseScore}. Margin: ${margin} points. ${margin >= 9 ? 'It was a total blowout — be savage.' : margin <= 2 ? 'It was extremely close — make it dramatic.' : 'It was a solid win — be cheeky.'} Use their actual names. Keep it fun and trash-talky like friends would.`
+            content: `You are a trash-talking sports announcer for a work cornhole league. Write ONE short notification (1-2 sentences, no quotes, no emojis) about this game result. Be funny, savage, and use their actual names. DO NOT just state the score — roast the losers or hype the winners.
+
+Winners: ${winners}
+Losers: ${losers}  
+Score: ${winScore}-${loseScore}
+${margin >= 9 ? 'It was a total blowout. Be absolutely savage about the losers. Make fun of how bad they lost.' : margin <= 2 ? 'It was extremely close. Make it dramatic like it was the championship.' : 'Solid win. Be cocky about the winners, throw mild shade at the losers.'}`
           }]
         })
       });
