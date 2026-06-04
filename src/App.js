@@ -147,21 +147,26 @@ function Leaderboard({ players, games, onRefresh, toast }) {
             const t2p1 = players.find(p => p.id === g.t2_p1)?.name || '?';
             const t2p2 = players.find(p => p.id === g.t2_p2)?.name || '?';
             return (
-              <div key={g.id} className="game-row">
-                <div className={`game-team${t1win ? ' winner' : ''}`}>{t1p1} & {t1p2}</div>
-                <div className="game-score-block">
-                  <span className={`badge ${t1win ? 'badge-win' : 'badge-loss'}`}>{g.t1_score}</span>
-                  <span style={{ color: 'var(--text3)', fontSize: 11 }}>–</span>
-                  <span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span>
+              <div key={g.id} style={{ paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid var(--border)' }}>
+                <div className="game-row" style={{ borderBottom: 'none', marginBottom: g.trash_talk ? 6 : 0, paddingBottom: 0 }}>
+                  <div className={`game-team${t1win ? ' winner' : ''}`}>{t1p1} & {t1p2}</div>
+                  <div className="game-score-block">
+                    <span className={`badge ${t1win ? 'badge-win' : 'badge-loss'}`}>{g.t1_score}</span>
+                    <span style={{ color: 'var(--text3)', fontSize: 11 }}>–</span>
+                    <span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span>
+                  </div>
+                  <div className={`game-team${!t1win ? ' winner' : ''}`} style={{ textAlign: 'right' }}>{t2p1} & {t2p2}</div>
+                  <button className="btn btn-sm btn-danger" onClick={async () => {
+                    if (!window.confirm('Delete this game?')) return;
+                    const { error } = await supabase.from('games').delete({ count: 'exact' }).eq('id', g.id);
+                    if (error) { alert('Delete failed: ' + error.message); return; }
+                    toast('Game deleted.');
+                    onRefresh();
+                  }}>✕</button>
                 </div>
-                <div className={`game-team${!t1win ? ' winner' : ''}`} style={{ textAlign: 'right' }}>{t2p1} & {t2p2}</div>
-                <button className="btn btn-sm btn-danger" onClick={async () => {
-                  if (!window.confirm('Delete this game?')) return;
-                  const { error, count } = await supabase.from('games').delete({ count: 'exact' }).eq('id', g.id);
-                  if (error) { alert('Delete failed: ' + error.message); return; }
-                  toast('Game deleted.');
-                  onRefresh();
-                }}>✕</button>
+                {g.trash_talk && (
+                  <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic', paddingLeft: 2 }}>"{g.trash_talk}"</div>
+                )}
               </div>
             );
           })}
@@ -812,7 +817,11 @@ ${margin >= 9 ? 'Total blowout. Be absolutely savage and merciless about the los
         const data = await res.json();
         console.log('API response:', JSON.stringify(data));
         const msg = data.content?.[0]?.text;
-        if (msg) setGameResult(msg);
+        if (msg) {
+          setGameResult(msg);
+          await supabase.from('games').update({ trash_talk: msg }).eq('id', game.id);
+          await fetchData();
+        }
       } catch(e) {
         console.error('API error:', e);
       }
