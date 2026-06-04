@@ -173,13 +173,23 @@ function emptyRound() {
   return { t1p1h: '', t1p1b: '', t1p2h: '', t1p2b: '', t2p1h: '', t2p1b: '', t2p2h: '', t2p2b: '' };
 }
 
+function calcScores(rounds) {
+  let t1 = 0, t2 = 0;
+  rounds.forEach(r => {
+    const t1pts = (parseInt(r.t1p1h)||0)*3 + (parseInt(r.t1p1b)||0) + (parseInt(r.t1p2h)||0)*3 + (parseInt(r.t1p2b)||0);
+    const t2pts = (parseInt(r.t2p1h)||0)*3 + (parseInt(r.t2p1b)||0) + (parseInt(r.t2p2h)||0)*3 + (parseInt(r.t2p2b)||0);
+    const net = t1pts - t2pts;
+    if (net > 0) t1 += net;
+    else if (net < 0) t2 += Math.abs(net);
+  });
+  return { t1, t2 };
+}
+
 function LogGame({ players, onGameLogged, toast }) {
   const [t1p1, setT1p1] = useState('');
   const [t1p2, setT1p2] = useState('');
   const [t2p1, setT2p1] = useState('');
   const [t2p2, setT2p2] = useState('');
-  const [t1score, setT1score] = useState('11');
-  const [t2score, setT2score] = useState('0');
   const [rounds, setRounds] = useState([emptyRound()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -208,6 +218,8 @@ function LogGame({ players, onGameLogged, toast }) {
 
   function sumKey(key) { return rounds.reduce((s, r) => s + (parseInt(r[key]) || 0), 0); }
 
+  const { t1: t1score, t2: t2score } = calcScores(rounds);
+
   async function handleSubmit() {
     setError('');
     const selected = [t1p1, t1p2, t2p1, t2p2];
@@ -222,8 +234,8 @@ function LogGame({ players, onGameLogged, toast }) {
     setSaving(true);
     const { error: err } = await supabase.from('games').insert({
       t1_p1: t1p1, t1_p2: t1p2, t2_p1: t2p1, t2_p2: t2p2,
-      t1_score: parseInt(t1score) || 0,
-      t2_score: parseInt(t2score) || 0,
+      t1_score: t1score,
+      t2_score: t2score,
       t1_hole: t1p1h + t1p2h, t2_hole: t2p1h + t2p2h,
       t1_board: t1p1b + t1p2b, t2_board: t2p1b + t2p2b,
       t1_p1_hole: t1p1h, t1_p1_board: t1p1b,
@@ -235,7 +247,6 @@ function LogGame({ players, onGameLogged, toast }) {
     if (err) { setError(err.message); return; }
     toast('Game logged!');
     onGameLogged();
-    setT1score('11'); setT2score('0');
     setRounds([emptyRound()]);
   }
 
@@ -275,24 +286,22 @@ function LogGame({ players, onGameLogged, toast }) {
       </div>
 
       <hr className="divider" />
-      <div style={{ marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Final Score</div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: '1.25rem', alignItems: 'flex-end' }}>
-        <div className="form-group" style={{ flex: 'unset' }}>
-          <label>Team 1</label>
-          <input type="number" className="score-input" min="0" max="11" value={t1score} onChange={e => setT1score(e.target.value)} />
+      <div style={{ marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Score (auto-calculated)</div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: '1.25rem', alignItems: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Team 1</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 40, color: t1score > t2score ? 'var(--green)' : 'var(--text)', lineHeight: 1 }}>{t1score}</div>
         </div>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--text3)', paddingBottom: 6 }}>–</div>
-        <div className="form-group" style={{ flex: 'unset' }}>
-          <label>Team 2</label>
-          <input type="number" className="score-input" min="0" max="11" value={t2score} onChange={e => setT2score(e.target.value)} />
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 24, color: 'var(--text3)' }}>–</div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Team 2</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 40, color: t2score > t1score ? 'var(--green)' : 'var(--text)', lineHeight: 1 }}>{t2score}</div>
         </div>
+        <div style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 8, lineHeight: 1.5 }}>Hole = 3 pts<br/>Board = 1 pt<br/>Cancellation</div>
       </div>
 
       <hr className="divider" />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Rounds ({rounds.length})</div>
-        {rounds.length < 20 && <button className="btn btn-sm" onClick={addRound}>+ Add round</button>}
-      </div>
+      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500, marginBottom: 12 }}>Rounds ({rounds.length})</div>
 
       {rounds.map((r, ri) => (
         <div key={ri} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px', marginBottom: 8 }}>
@@ -327,6 +336,10 @@ function LogGame({ players, onGameLogged, toast }) {
           </div>
         </div>
       ))}
+
+      {rounds.length < 20 && (
+        <button className="btn" onClick={addRound} style={{ width: '100%', marginBottom: 12 }}>+ Add round</button>
+      )}
 
       <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '10px 12px', marginBottom: 16, fontSize: 13 }}>
         <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8, fontWeight: 500 }}>Totals</div>
