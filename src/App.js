@@ -50,7 +50,7 @@ function SetupScreen() {
 }
 
 // ---- LEADERBOARD ----
-function Leaderboard({ players, games }) {
+function Leaderboard({ players, games, onRefresh, toast }) {
   const stats = buildStats(players, games);
   const sorted = [...players].sort((a, b) => {
     const wa = stats[a.id] ? stats[a.id].wins / (stats[a.id].wins + stats[a.id].losses || 1) : 0;
@@ -133,6 +133,12 @@ function Leaderboard({ players, games }) {
                   <span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span>
                 </div>
                 <div className={`game-team${!t1win ? ' winner' : ''}`} style={{ textAlign: 'right' }}>{t2p1} & {t2p2}</div>
+                <button className="btn btn-sm btn-danger" onClick={async () => {
+                  if (!window.confirm('Delete this game?')) return;
+                  await supabase.from('games').delete().eq('id', g.id);
+                  toast('Game deleted.');
+                  onRefresh();
+                }}>✕</button>
               </div>
             );
           })}
@@ -504,7 +510,7 @@ export default function App() {
       <main className="main">
         {loading ? <Loading /> : (
           <>
-            {tab === 'Leaderboard' && <Leaderboard players={players} games={games} />}
+            {tab === 'Leaderboard' && <Leaderboard players={players} games={games} onRefresh={fetchData} toast={showToast} />}
             {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} />}
             {tab === 'Players' && <Players players={players} onRefresh={fetchData} toast={showToast} />}
             {tab === 'H2H' && <HeadToHead players={players} games={games} />}
