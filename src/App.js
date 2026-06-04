@@ -606,13 +606,11 @@ export default function App() {
       <header className="header">
         <div className="header-inner">
           <div className="logo" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="1" y="5" width="26" height="16" rx="2" fill="#5a3e1b" stroke="#7a5a2a" strokeWidth="1.5"/>
-              <rect x="1" y="5" width="26" height="4" rx="2" fill="#6b4a20" stroke="#7a5a2a" strokeWidth="1.5"/>
-              <ellipse cx="14" cy="14" rx="4.5" ry="4.5" fill="#111" stroke="#333" strokeWidth="1"/>
-              <ellipse cx="14" cy="14" rx="2" ry="2" fill="#1a1a1a"/>
-              <line x1="4" y1="2" x2="8" y2="5" stroke="#7a5a2a" strokeWidth="2" strokeLinecap="round"/>
-              <line x1="24" y1="2" x2="20" y2="5" stroke="#7a5a2a" strokeWidth="2" strokeLinecap="round"/>
+            <svg width="20" height="32" viewBox="0 0 90 145" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="0" y="0" width="90" height="145" rx="10" fill="#8B5E2A" stroke="#6B3F10" strokeWidth="3"/>
+              <circle cx="45" cy="48" r="19" fill="#1a0f00" stroke="#3a2000" strokeWidth="2"/>
+              <rect x="58" y="88" width="22" height="22" rx="4" fill="#e8c547" stroke="#c9a832" strokeWidth="1.5" transform="rotate(-15, 69, 99)"/>
+              <rect x="20" y="105" width="22" height="22" rx="4" fill="#e05c5c" stroke="#b83c3c" strokeWidth="1.5" transform="rotate(10, 31, 116)"/>
             </svg>
             <span>Cornhole</span>
           </div>
