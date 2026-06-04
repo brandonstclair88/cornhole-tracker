@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './index.css';
 import { supabase } from './supabase';
 
@@ -26,6 +26,28 @@ function Avatar({ name, index, size = 28 }) {
 
 function Toast({ message }) {
   return <div className={`toast ${message ? 'show' : ''}`}>{message}</div>;
+}
+
+function GameResultBanner({ result, onDismiss }) {
+  if (!result) return null;
+  return (
+    <div style={{
+      position: 'fixed', bottom: '1.5rem', left: '1rem', right: '1rem',
+      background: 'var(--surface)', border: '1px solid var(--accent)',
+      borderRadius: 'var(--radius)', padding: '14px 16px',
+      zIndex: 9999, boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+      animation: 'slideUp 0.25s ease'
+    }}>
+      <style>{`@keyframes slideUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }`}</style>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', marginBottom: 4, fontWeight: 500 }}>Game over</div>
+          <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>{result}</div>
+        </div>
+        <button onClick={onDismiss} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 18, cursor: 'pointer', padding: 0, lineHeight: 1 }}>✕</button>
+      </div>
+    </div>
+  );
 }
 
 function Loading() {
@@ -720,6 +742,8 @@ export default function App() {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState('');
+  const [gameResult, setGameResult] = useState(null);
+  const latestGameId = useRef(null);
 
   const isConfigured = process.env.REACT_APP_SUPABASE_URL && process.env.REACT_APP_SUPABASE_ANON_KEY
     && process.env.REACT_APP_SUPABASE_URL !== 'YOUR_SUPABASE_URL';
@@ -728,6 +752,37 @@ export default function App() {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 2500);
   }, []);
+
+  async function generateGameResult(game, playerMap) {
+    const getName = id => playerMap[id] || '?';
+    const w1 = getName(game.t1_p1), w2 = getName(game.t1_p2);
+    const l1 = getName(game.t2_p1), l2 = getName(game.t2_p2);
+    const t1wins = game.t1_score > game.t2_score;
+    const winners = t1wins ? `${w1} & ${w2}` : `${l1} & ${l2}`;
+    const losers = t1wins ? `${l1} & ${l2}` : `${w1} & ${w2}`;
+    const winScore = t1wins ? game.t1_score : game.t2_score;
+    const loseScore = t1wins ? game.t2_score : game.t1_score;
+    const margin = winScore - loseScore;
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 100,
+          messages: [{
+            role: 'user',
+            content: `Write a single short witty in-app notification (1-2 sentences max, no quotes) announcing a cornhole game result. Winners: ${winners}. Losers: ${losers}. Score: ${winScore}-${loseScore}. Margin: ${margin} points. ${margin >= 9 ? 'It was a total blowout — be savage.' : margin <= 2 ? 'It was extremely close — make it dramatic.' : 'It was a solid win — be cheeky.'} Use their actual names. Keep it fun and trash-talky like friends would.`
+          }]
+        })
+      });
+      const data = await res.json();
+      return data.content?.[0]?.text || `${winners} beat ${losers} ${winScore}-${loseScore}!`;
+    } catch {
+      return `${winners} beat ${losers} ${winScore}-${loseScore}!`;
+    }
+  }
 
   const fetchData = useCallback(async () => {
     if (!isConfigured) return;
@@ -740,15 +795,30 @@ export default function App() {
     setLoading(false);
   }, [isConfigured]);
 
+  const handleGameChange = useCallback(async (payload) => {
+    await fetchData();
+    if (payload.eventType === 'INSERT' && payload.new) {
+      const game = payload.new;
+      if (game.id === latestGameId.current) return;
+      latestGameId.current = game.id;
+      const { data: ps } = await supabase.from('players').select('*');
+      const playerMap = {};
+      (ps || []).forEach(p => { playerMap[p.id] = p.name; });
+      const msg = await generateGameResult(game, playerMap);
+      setGameResult(msg);
+    }
+  }, [fetchData]);
+
   useEffect(() => {
     if (!isConfigured) { setLoading(false); return; }
     fetchData();
     const sub = supabase.channel('realtime-all')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, fetchData)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'games' }, handleGameChange)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'games' }, fetchData)
       .subscribe();
     return () => supabase.removeChannel(sub);
-  }, [fetchData, isConfigured]);
+  }, [fetchData, handleGameChange, isConfigured]);
 
   if (!isConfigured) return <SetupScreen />;
 
@@ -786,6 +856,7 @@ export default function App() {
         )}
       </main>
       <Toast message={toastMsg} />
+      <GameResultBanner result={gameResult} onDismiss={() => setGameResult(null)} />
     </>
   );
 }
