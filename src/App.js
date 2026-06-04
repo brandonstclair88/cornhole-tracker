@@ -169,6 +169,10 @@ function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, p
 }
 
 // ---- LOG GAME ----
+function emptyRound() {
+  return { t1p1h: '', t1p1b: '', t1p2h: '', t1p2b: '', t2p1h: '', t2p1b: '', t2p2h: '', t2p2b: '' };
+}
+
 function LogGame({ players, onGameLogged, toast }) {
   const [t1p1, setT1p1] = useState('');
   const [t1p2, setT1p2] = useState('');
@@ -176,7 +180,7 @@ function LogGame({ players, onGameLogged, toast }) {
   const [t2p2, setT2p2] = useState('');
   const [t1score, setT1score] = useState('11');
   const [t2score, setT2score] = useState('0');
-  const [bags, setBags] = useState({ t1p1h: '0', t1p1b: '0', t1p2h: '0', t1p2b: '0', t2p1h: '0', t2p1b: '0', t2p2h: '0', t2p2b: '0' });
+  const [rounds, setRounds] = useState([emptyRound()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -189,10 +193,20 @@ function LogGame({ players, onGameLogged, toast }) {
     }
   }, [players]);
 
-  function setBag(key, val) { setBags(b => ({ ...b, [key]: val })); }
-
   const playerOptions = players.map(p => <option key={p.id} value={p.id}>{p.name}</option>);
   const getName = id => players.find(p => p.id === id)?.name || '?';
+
+  function setRoundVal(ri, key, val) {
+    setRounds(rs => rs.map((r, i) => i === ri ? { ...r, [key]: val } : r));
+  }
+  function addRound() {
+    if (rounds.length < 20) setRounds(rs => [...rs, emptyRound()]);
+  }
+  function removeRound(ri) {
+    if (rounds.length > 1) setRounds(rs => rs.filter((_, i) => i !== ri));
+  }
+
+  function sumKey(key) { return rounds.reduce((s, r) => s + (parseInt(r[key]) || 0), 0); }
 
   async function handleSubmit() {
     setError('');
@@ -200,31 +214,36 @@ function LogGame({ players, onGameLogged, toast }) {
     if (selected.some(v => !v)) { setError('Please select all 4 players.'); return; }
     if (new Set(selected).size < 4) { setError('Each player must be unique across both teams.'); return; }
 
+    const t1p1h = sumKey('t1p1h'), t1p1b = sumKey('t1p1b');
+    const t1p2h = sumKey('t1p2h'), t1p2b = sumKey('t1p2b');
+    const t2p1h = sumKey('t2p1h'), t2p1b = sumKey('t2p1b');
+    const t2p2h = sumKey('t2p2h'), t2p2b = sumKey('t2p2b');
+
     setSaving(true);
     const { error: err } = await supabase.from('games').insert({
       t1_p1: t1p1, t1_p2: t1p2, t2_p1: t2p1, t2_p2: t2p2,
       t1_score: parseInt(t1score) || 0,
       t2_score: parseInt(t2score) || 0,
-      t1_hole: (parseInt(bags.t1p1h)||0) + (parseInt(bags.t1p2h)||0),
-      t2_hole: (parseInt(bags.t2p1h)||0) + (parseInt(bags.t2p2h)||0),
-      t1_board: (parseInt(bags.t1p1b)||0) + (parseInt(bags.t1p2b)||0),
-      t2_board: (parseInt(bags.t2p1b)||0) + (parseInt(bags.t2p2b)||0),
-      t1_p1_hole: parseInt(bags.t1p1h)||0, t1_p1_board: parseInt(bags.t1p1b)||0,
-      t1_p2_hole: parseInt(bags.t1p2h)||0, t1_p2_board: parseInt(bags.t1p2b)||0,
-      t2_p1_hole: parseInt(bags.t2p1h)||0, t2_p1_board: parseInt(bags.t2p1b)||0,
-      t2_p2_hole: parseInt(bags.t2p2h)||0, t2_p2_board: parseInt(bags.t2p2b)||0,
+      t1_hole: t1p1h + t1p2h, t2_hole: t2p1h + t2p2h,
+      t1_board: t1p1b + t1p2b, t2_board: t2p1b + t2p2b,
+      t1_p1_hole: t1p1h, t1_p1_board: t1p1b,
+      t1_p2_hole: t1p2h, t1_p2_board: t1p2b,
+      t2_p1_hole: t2p1h, t2_p1_board: t2p1b,
+      t2_p2_hole: t2p2h, t2_p2_board: t2p2b,
     });
     setSaving(false);
     if (err) { setError(err.message); return; }
-    toast('Game logged! 🎯');
+    toast('Game logged!');
     onGameLogged();
     setT1score('11'); setT2score('0');
-    setBags({ t1p1h:'0', t1p1b:'0', t1p2h:'0', t1p2b:'0', t2p1h:'0', t2p1b:'0', t2p2h:'0', t2p2b:'0' });
+    setRounds([emptyRound()]);
   }
 
   if (players.length < 4) {
     return <div className="card"><div className="empty">You need at least 4 players to log a 2v2 game.<br />Add more in the Players tab.</div></div>;
   }
+
+  const names = { t1p1: getName(t1p1), t1p2: getName(t1p2), t2p1: getName(t2p1), t2p2: getName(t2p2) };
 
   return (
     <div className="card">
@@ -256,7 +275,7 @@ function LogGame({ players, onGameLogged, toast }) {
       </div>
 
       <hr className="divider" />
-      <div style={{ marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Scores</div>
+      <div style={{ marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Final Score</div>
       <div style={{ display: 'flex', gap: 12, marginBottom: '1.25rem', alignItems: 'flex-end' }}>
         <div className="form-group" style={{ flex: 'unset' }}>
           <label>Team 1</label>
@@ -270,17 +289,63 @@ function LogGame({ players, onGameLogged, toast }) {
       </div>
 
       <hr className="divider" />
-      <div style={{ marginBottom: 10, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Bag stats — per player</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Rounds ({rounds.length})</div>
+        {rounds.length < 20 && <button className="btn btn-sm" onClick={addRound}>+ Add round</button>}
+      </div>
 
-      <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Team 1</div>
-      <BagInputRow label={getName(t1p1)} name={t1p1} hole={bags.t1p1h} board={bags.t1p1b} onHole={v => setBag('t1p1h', v)} onBoard={v => setBag('t1p1b', v)} players={players} playerIndex={0} />
-      <BagInputRow label={getName(t1p2)} name={t1p2} hole={bags.t1p2h} board={bags.t1p2b} onHole={v => setBag('t1p2h', v)} onBoard={v => setBag('t1p2b', v)} players={players} playerIndex={1} />
+      {rounds.map((r, ri) => (
+        <div key={ri} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500 }}>Round {ri + 1}</span>
+            {rounds.length > 1 && <button className="btn btn-sm btn-danger" onClick={() => removeRound(ri)}>✕</button>}
+          </div>
 
-      <div style={{ marginTop: 12, marginBottom: 6, fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Team 2</div>
-      <BagInputRow label={getName(t2p1)} name={t2p1} hole={bags.t2p1h} board={bags.t2p1b} onHole={v => setBag('t2p1h', v)} onBoard={v => setBag('t2p1b', v)} players={players} playerIndex={2} />
-      <BagInputRow label={getName(t2p2)} name={t2p2} hole={bags.t2p2h} board={bags.t2p2b} onHole={v => setBag('t2p2h', v)} onBoard={v => setBag('t2p2b', v)} players={players} playerIndex={3} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {[
+              { label: names.t1p1, hk: 't1p1h', bk: 't1p1b', team: 1 },
+              { label: names.t1p2, hk: 't1p2h', bk: 't1p2b', team: 1 },
+              { label: names.t2p1, hk: 't2p1h', bk: 't2p1b', team: 2 },
+              { label: names.t2p2, hk: 't2p2h', bk: 't2p2b', team: 2 },
+            ].map(({ label, hk, bk, team }) => (
+              <div key={hk} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '8px 10px', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 11, color: team === 1 ? 'var(--accent)' : 'var(--green)', marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  T{team} · {label}
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>🕳 Hole</label>
+                    <input type="number" min="0" max="4" value={r[hk]} placeholder="0" onChange={e => setRoundVal(ri, hk, e.target.value)} style={{ textAlign: 'center' }} />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Board</label>
+                    <input type="number" min="0" max="4" value={r[bk]} placeholder="0" onChange={e => setRoundVal(ri, bk, e.target.value)} style={{ textAlign: 'center' }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
-      <button className="btn btn-primary" onClick={handleSubmit} disabled={saving} style={{ marginTop: 16 }}>
+      <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '10px 12px', marginBottom: 16, fontSize: 13 }}>
+        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8, fontWeight: 500 }}>Totals</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, textAlign: 'center' }}>
+          {[
+            { name: names.t1p1, h: sumKey('t1p1h'), b: sumKey('t1p1b') },
+            { name: names.t1p2, h: sumKey('t1p2h'), b: sumKey('t1p2b') },
+            { name: names.t2p1, h: sumKey('t2p1h'), b: sumKey('t2p1b') },
+            { name: names.t2p2, h: sumKey('t2p2h'), b: sumKey('t2p2b') },
+          ].map(({ name, h, b }) => (
+            <div key={name}>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>{name}</div>
+              <div style={{ fontSize: 13, color: 'var(--text)' }}>🕳 {h} · {b} board</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
         {saving ? 'Saving...' : 'Log Game →'}
       </button>
     </div>
