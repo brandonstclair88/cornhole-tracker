@@ -454,7 +454,114 @@ function buildStats(players, games) {
   return stats;
 }
 
-const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H'];
+// ---- MASTER CORNHOLER ----
+function MasterCornholer({ players, games }) {
+  // Get start of current week (Monday)
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon...
+  const diffToMonday = (day === 0 ? -6 : 1 - day);
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() + diffToMonday);
+  weekStart.setHours(0, 0, 0, 0);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+
+  const weekGames = games.filter(g => {
+    const d = new Date(g.played_at);
+    return d >= weekStart && d <= weekEnd;
+  });
+
+  const stats = buildStats(players, weekGames);
+  const qualified = players.filter(p => (stats[p.id]?.wins || 0) + (stats[p.id]?.losses || 0) > 0);
+  const sorted = [...qualified].sort((a, b) => {
+    const sa = stats[a.id]; const sb = stats[b.id];
+    const wa = sa.wins / (sa.wins + sa.losses); const wb = sb.wins / (sb.wins + sb.losses);
+    if (wb !== wa) return wb - wa;
+    return sb.wins - sa.wins;
+  });
+
+  const leader = sorted[0];
+  const leaderStats = leader ? stats[leader.id] : null;
+  const leaderIndex = leader ? players.indexOf(leader) : 0;
+  const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+  return (
+    <div>
+      <div className="card" style={{ textAlign: 'center', padding: '2rem 1.25rem' }}>
+        <div style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8 }}>Week of {weekLabel}</div>
+        {!leader ? (
+          <div className="empty" style={{ padding: '1.5rem 0' }}>No games played this week yet.</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 48, marginBottom: 8 }}>🏆</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '1px', color: 'var(--text3)', marginBottom: 4 }}>Master Cornholer</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 48, color: 'var(--accent)', lineHeight: 1, marginBottom: 16 }}>{leader.name}</div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">Wins</div>
+                <div className="stat-box-val" style={{ color: 'var(--green)' }}>{leaderStats.wins}</div>
+              </div>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">Losses</div>
+                <div className="stat-box-val" style={{ color: 'var(--red)' }}>{leaderStats.losses}</div>
+              </div>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">Win %</div>
+                <div className="stat-box-val">{Math.round(leaderStats.wins / (leaderStats.wins + leaderStats.losses) * 100)}%</div>
+              </div>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">🕳 Hole</div>
+                <div className="stat-box-val">{leaderStats.hole}</div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {sorted.length > 1 && (
+        <div className="card">
+          <div className="card-title">This Week's Rankings</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>🕳 Hole</th><th>Board</th></tr>
+              </thead>
+              <tbody>
+                {sorted.map((p, i) => {
+                  const s = stats[p.id];
+                  const pct = Math.round(s.wins / (s.wins + s.losses) * 100);
+                  return (
+                    <tr key={p.id}>
+                      <td><span className={`rank-num${i === 0 ? ' gold' : ''}`}>{i + 1}</span></td>
+                      <td>
+                        <div className="player-row">
+                          <Avatar name={p.name} index={players.indexOf(p)} />
+                          <span style={{ fontWeight: 500 }}>{p.name}</span>
+                        </div>
+                      </td>
+                      <td><span className="badge badge-win">{s.wins}</span></td>
+                      <td><span className="badge badge-loss">{s.losses}</span></td>
+                      <td style={{ color: 'var(--text2)' }}>{pct}%</td>
+                      <td style={{ color: 'var(--text2)' }}>{s.hole}</td>
+                      <td style={{ color: 'var(--text2)' }}>{s.board}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 12 }}>
+            {weekGames.length} game{weekGames.length !== 1 ? 's' : ''} played this week. Resets every Monday.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Master'];
 
 export default function App() {
   const [tab, setTab] = useState('Leaderboard');
@@ -515,6 +622,7 @@ export default function App() {
             {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} />}
             {tab === 'Players' && <Players players={players} onRefresh={fetchData} toast={showToast} />}
             {tab === 'H2H' && <HeadToHead players={players} games={games} />}
+            {tab === 'Master' && <MasterCornholer players={players} games={games} />}
           </>
         )}
       </main>
