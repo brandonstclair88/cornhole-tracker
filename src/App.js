@@ -206,6 +206,8 @@ function LogGame({ players, onGameLogged, toast }) {
   const [t1p2, setT1p2] = useState('');
   const [t2p1, setT2p1] = useState('');
   const [t2p2, setT2p2] = useState('');
+  const [t1First, setT1First] = useState(true);
+  const [t2First, setT2First] = useState(true);
   const [rounds, setRounds] = useState([emptyRound()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -280,7 +282,7 @@ function LogGame({ players, onGameLogged, toast }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500, marginBottom: 6 }}>Team 1</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
             <div className="form-group">
               <label>Player A</label>
               <select value={t1p1} onChange={e => setT1p1(e.target.value)}>{playerOptions}</select>
@@ -290,11 +292,16 @@ function LogGame({ players, onGameLogged, toast }) {
               <select value={t1p2} onChange={e => setT1p2(e.target.value)}>{playerOptions}</select>
             </div>
           </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--text3)', alignSelf: 'center' }}>Throws first:</span>
+            <button className="btn btn-sm" style={{ borderColor: t1First ? 'var(--accent)' : undefined, color: t1First ? 'var(--accent)' : undefined }} onClick={() => setT1First(true)}>{names.t1p1 || 'Player A'}</button>
+            <button className="btn btn-sm" style={{ borderColor: !t1First ? 'var(--accent)' : undefined, color: !t1First ? 'var(--accent)' : undefined }} onClick={() => setT1First(false)}>{names.t1p2 || 'Player B'}</button>
+          </div>
         </div>
         <div style={{ textAlign: 'center', fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--text3)', padding: '2px 0' }}>VS</div>
         <div>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--green)', fontWeight: 500, marginBottom: 6 }}>Team 2</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
             <div className="form-group">
               <label>Player A</label>
               <select value={t2p1} onChange={e => setT2p1(e.target.value)}>{playerOptions}</select>
@@ -303,6 +310,11 @@ function LogGame({ players, onGameLogged, toast }) {
               <label>Player B</label>
               <select value={t2p2} onChange={e => setT2p2(e.target.value)}>{playerOptions}</select>
             </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--text3)', alignSelf: 'center' }}>Throws first:</span>
+            <button className="btn btn-sm" style={{ borderColor: t2First ? 'var(--green)' : undefined, color: t2First ? 'var(--green)' : undefined }} onClick={() => setT2First(true)}>{names.t2p1 || 'Player A'}</button>
+            <button className="btn btn-sm" style={{ borderColor: !t2First ? 'var(--green)' : undefined, color: !t2First ? 'var(--green)' : undefined }} onClick={() => setT2First(false)}>{names.t2p2 || 'Player B'}</button>
           </div>
         </div>
       </div>
@@ -331,7 +343,12 @@ function LogGame({ players, onGameLogged, toast }) {
             <div>
               <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500 }}>Round {ri + 1}</span>
               <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 8 }}>
-                {ri % 2 === 0 ? `${names.t1p1} vs ${names.t2p1}` : `${names.t1p2} vs ${names.t2p2}`}
+                {(() => {
+                  const isOdd = ri % 2 === 0;
+                  const t1n = isOdd ? (t1First ? names.t1p1 : names.t1p2) : (t1First ? names.t1p2 : names.t1p1);
+                  const t2n = isOdd ? (t2First ? names.t2p1 : names.t2p2) : (t2First ? names.t2p2 : names.t2p1);
+                  return `${t1n} vs ${t2n}`;
+                })()}
               </span>
             </div>
             {rounds.length > 1 && <button className="btn btn-sm btn-danger" onClick={() => removeRound(ri)}>✕</button>}
@@ -340,9 +357,12 @@ function LogGame({ players, onGameLogged, toast }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {(() => {
               const isOdd = ri % 2 === 0;
-              const throwers = isOdd
-                ? [{ label: names.t1p1, hk: 't1p1h', bk: 't1p1b', team: 1 }, { label: names.t2p1, hk: 't2p1h', bk: 't2p1b', team: 2 }]
-                : [{ label: names.t1p2, hk: 't1p2h', bk: 't1p2b', team: 1 }, { label: names.t2p2, hk: 't2p2h', bk: 't2p2b', team: 2 }];
+              const t1thrower = isOdd ? (t1First ? 't1p1' : 't1p2') : (t1First ? 't1p2' : 't1p1');
+              const t2thrower = isOdd ? (t2First ? 't2p1' : 't2p2') : (t2First ? 't2p2' : 't2p1');
+              const throwers = [
+                { label: names[t1thrower], hk: `${t1thrower}h`, bk: `${t1thrower}b`, team: 1 },
+                { label: names[t2thrower], hk: `${t2thrower}h`, bk: `${t2thrower}b`, team: 2 },
+              ];
               return throwers.map(({ label, hk, bk, team }) => (
                 <div key={hk} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '8px 10px', border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 11, color: team === 1 ? 'var(--accent)' : 'var(--green)', marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
