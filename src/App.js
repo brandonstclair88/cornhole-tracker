@@ -85,7 +85,17 @@ function Leaderboard({ players, games, onRefresh, toast }) {
   const totalPts = games.reduce((s, g) => s + g.t1_score + g.t2_score, 0);
   const totalHole = games.reduce((s, g) => s + (g.t1_p1_hole||0) + (g.t1_p2_hole||0) + (g.t2_p1_hole||0) + (g.t2_p2_hole||0), 0);
 
-  const recent = [...games].sort((a, b) => new Date(b.played_at) - new Date(a.played_at)).slice(0, 6);
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMonday = (day === 0 ? -6 : 1 - day);
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() + diffToMonday);
+  weekStart.setHours(0, 0, 0, 0);
+
+  const recent = [...games]
+    .filter(g => new Date(g.played_at) >= weekStart)
+    .sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
+    .slice(0, 20);
 
   return (
     <div>
@@ -139,7 +149,7 @@ function Leaderboard({ players, games, onRefresh, toast }) {
 
       {recent.length > 0 && (
         <div className="card">
-          <div className="card-title">Recent Games</div>
+          <div className="card-title">This Week's Games</div>
           {recent.map(g => {
             const t1win = g.t1_score > g.t2_score;
             const t1p1 = players.find(p => p.id === g.t1_p1)?.name || '?';
