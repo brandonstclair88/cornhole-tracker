@@ -357,21 +357,23 @@ function LogGame({ players, onGameLogged, toast }) {
         <button className="btn" onClick={addRound} style={{ width: '100%', marginBottom: 12 }}>+ Add round</button>
       )}
 
-      <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '10px 12px', marginBottom: 16, fontSize: 13 }}>
-        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8, fontWeight: 500 }}>Totals</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, textAlign: 'center' }}>
-          {[
-            { name: names.t1p1, h: sumKey('t1p1h'), b: sumKey('t1p1b') },
-            { name: names.t1p2, h: sumKey('t1p2h'), b: sumKey('t1p2b') },
-            { name: names.t2p1, h: sumKey('t2p1h'), b: sumKey('t2p1b') },
-            { name: names.t2p2, h: sumKey('t2p2h'), b: sumKey('t2p2b') },
-          ].map(({ name, h, b }) => (
-            <div key={name}>
-              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>{name}</div>
-              <div style={{ fontSize: 13, color: 'var(--text)' }}>🕳 {h} · {b} board</div>
+      <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '10px 12px', marginBottom: 16 }}>
+        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8, fontWeight: 500 }}>Running score</div>
+        {rounds.map((r, ri) => {
+          const t1pts = (parseInt(r.t1p1h)||0)*3 + (parseInt(r.t1p1b)||0) + (parseInt(r.t1p2h)||0)*3 + (parseInt(r.t1p2b)||0);
+          const t2pts = (parseInt(r.t2p1h)||0)*3 + (parseInt(r.t2p1b)||0) + (parseInt(r.t2p2h)||0)*3 + (parseInt(r.t2p2b)||0);
+          const net = t1pts - t2pts;
+          const { t1: runT1, t2: runT2 } = calcScores(rounds.slice(0, ri + 1));
+          return (
+            <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: ri < rounds.length - 1 ? '1px solid var(--border)' : 'none' }}>
+              <span style={{ fontSize: 11, color: 'var(--text3)', minWidth: 54, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Rd {ri + 1}</span>
+              <span style={{ fontSize: 12, color: net > 0 ? 'var(--accent)' : net < 0 ? 'var(--green)' : 'var(--text3)', flex: 1 }}>
+                {net > 0 ? `T1 +${net}` : net < 0 ? `T2 +${Math.abs(net)}` : 'Cancelled'}
+              </span>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: 'var(--text)' }}>{runT1} – {runT2}</span>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
