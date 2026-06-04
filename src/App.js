@@ -171,16 +171,20 @@ function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, p
 // ---- STEPPER ----
 function Stepper({ value, onChange, max = 4 }) {
   const val = parseInt(value) || 0;
+  const atMax = val >= max;
+  const atMin = val <= 0;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
       <button
-        onClick={() => onChange(Math.max(0, val - 1))}
-        style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: 'var(--text2)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
+        onClick={() => { if (!atMin) onChange(val - 1); }}
+        disabled={atMin}
+        style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: atMin ? 'var(--text3)' : 'var(--text2)', fontSize: 18, cursor: atMin ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
       >−</button>
       <span style={{ width: 28, textAlign: 'center', fontFamily: 'var(--font-display)', fontSize: 20, color: val > 0 ? 'var(--text)' : 'var(--text3)', userSelect: 'none' }}>{val}</span>
       <button
-        onClick={() => onChange(Math.min(max, val + 1))}
-        style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: 'var(--text2)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
+        onClick={() => { if (!atMax) onChange(val + 1); }}
+        disabled={atMax}
+        style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: atMax ? 'var(--text3)' : 'var(--text2)', fontSize: 18, cursor: atMax ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
       >+</button>
     </div>
   );
@@ -224,8 +228,19 @@ function LogGame({ players, onGameLogged, toast }) {
   const playerOptions = players.map(p => <option key={p.id} value={p.id}>{p.name}</option>);
   const getName = id => players.find(p => p.id === id)?.name || '?';
 
-  function setRoundVal(ri, key, val) {
-    setRounds(rs => rs.map((r, i) => i === ri ? { ...r, [key]: val } : r));
+function setRoundVal(ri, key, val) {
+    setRounds(rs => rs.map((r, i) => {
+      if (i !== ri) return r;
+      const newVal = Math.max(0, Math.min(4, parseInt(val) || 0));
+      // find the paired key (hole <-> board for same player)
+      const paired = key.endsWith('h') ? key.slice(0, -1) + 'b' : key.slice(0, -1) + 'h';
+      const pairedVal = parseInt(r[paired]) || 0;
+      const total = newVal + pairedVal;
+      if (total > 4) {
+        return { ...r, [key]: newVal, [paired]: 4 - newVal };
+      }
+      return { ...r, [key]: newVal };
+    }));
   }
   function addRound() {
     if (rounds.length < 20) setRounds(rs => [...rs, emptyRound()]);
@@ -374,11 +389,11 @@ function LogGame({ players, onGameLogged, toast }) {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                      <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
+                      <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} max={4 - (parseInt(r[bk]) || 0)} />
                       <span style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Hole</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                      <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
+                      <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} max={4 - (parseInt(r[hk]) || 0)} />
                       <span style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Board</span>
                     </div>
                   </div>
