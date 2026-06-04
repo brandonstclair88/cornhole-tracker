@@ -354,7 +354,7 @@ function LogGame({ players, onGameLogged, toast }) {
             {rounds.length > 1 && <button className="btn btn-sm btn-danger" onClick={() => removeRound(ri)}>✕</button>}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {(() => {
               const isOdd = ri % 2 === 0;
               const t1thrower = isOdd ? (t1First ? 't1p1' : 't1p2') : (t1First ? 't1p2' : 't1p1');
@@ -364,19 +364,15 @@ function LogGame({ players, onGameLogged, toast }) {
                 { label: names[t2thrower], hk: `${t2thrower}h`, bk: `${t2thrower}b`, team: 2 },
               ];
               return throwers.map(({ label, hk, bk, team }) => (
-                <div key={hk} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '8px 10px', border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 11, color: team === 1 ? 'var(--accent)' : 'var(--green)', marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    T{team} · {label}
+                <div key={hk} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '8px 10px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, color: team === 1 ? 'var(--accent)' : 'var(--green)', fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {label}
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
-                      <label>🕳 Hole</label>
-                      <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
-                    </div>
-                    <div className="form-group" style={{ flex: 1, alignItems: 'center' }}>
-                      <label>Board</label>
-                      <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>🕳</span>
+                    <Stepper value={r[hk]} onChange={v => setRoundVal(ri, hk, v)} />
+                    <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 4 }}>Board</span>
+                    <Stepper value={r[bk]} onChange={v => setRoundVal(ri, bk, v)} />
                   </div>
                 </div>
               ));
