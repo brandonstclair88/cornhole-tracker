@@ -32,7 +32,6 @@ function Loading() {
   return <div className="loading"><div className="spinner" />Loading...</div>;
 }
 
-// ---- SETUP SCREEN (no env vars configured yet) ----
 function SetupScreen() {
   return (
     <div className="setup-screen">
@@ -40,7 +39,7 @@ function SetupScreen() {
       <div className="setup-sub">Work Break Tracker</div>
       <div className="setup-card">
         <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: '1rem', lineHeight: 1.6 }}>
-          To use this app, you need a free Supabase database. Follow the README instructions to set it up — it takes about 5 minutes.
+          To use this app, you need a free Supabase database. Follow the README instructions to set it up.
         </p>
         <p className="setup-hint">
           See <strong style={{color:'var(--text)'}}>README.md</strong> in this project for full setup instructions.
@@ -62,7 +61,7 @@ function Leaderboard({ players, games }) {
 
   const totalGames = games.length;
   const totalPts = games.reduce((s, g) => s + g.t1_score + g.t2_score, 0);
-  const totalHole = games.reduce((s, g) => s + g.t1_hole + g.t2_hole, 0);
+  const totalHole = games.reduce((s, g) => s + (g.t1_p1_hole||0) + (g.t1_p2_hole||0) + (g.t2_p1_hole||0) + (g.t2_p2_hole||0), 0);
 
   const recent = [...games].sort((a, b) => new Date(b.played_at) - new Date(a.played_at)).slice(0, 6);
 
@@ -84,7 +83,7 @@ function Leaderboard({ players, games }) {
             <table>
               <thead>
                 <tr>
-                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>🕳</th><th>Board</th>
+                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>🕳 Hole</th><th>Board</th>
                 </tr>
               </thead>
               <tbody>
@@ -143,6 +142,25 @@ function Leaderboard({ players, games }) {
   );
 }
 
+// ---- BAG INPUT ROW ----
+function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, players }) {
+  const pIndex = players.findIndex(p => p.id === name);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+      <Avatar name={label} index={pIndex >= 0 ? pIndex : playerIndex} size={26} />
+      <span style={{ fontSize: 13, color: 'var(--text2)', minWidth: 70, flex: 1 }}>{label}</span>
+      <div className="form-group" style={{ flex: 'unset', minWidth: 0 }}>
+        <label>🕳 Hole</label>
+        <input type="number" min="0" max="4" value={hole} onChange={e => onHole(e.target.value)} style={{ width: 60, textAlign: 'center' }} />
+      </div>
+      <div className="form-group" style={{ flex: 'unset', minWidth: 0 }}>
+        <label>Board</label>
+        <input type="number" min="0" max="4" value={board} onChange={e => onBoard(e.target.value)} style={{ width: 60, textAlign: 'center' }} />
+      </div>
+    </div>
+  );
+}
+
 // ---- LOG GAME ----
 function LogGame({ players, onGameLogged, toast }) {
   const [t1p1, setT1p1] = useState('');
@@ -151,26 +169,23 @@ function LogGame({ players, onGameLogged, toast }) {
   const [t2p2, setT2p2] = useState('');
   const [t1score, setT1score] = useState('11');
   const [t2score, setT2score] = useState('0');
-  const [t1hole, setT1hole] = useState('0');
-  const [t2hole, setT2hole] = useState('0');
-  const [t1board, setT1board] = useState('0');
-  const [t2board, setT2board] = useState('0');
+  const [bags, setBags] = useState({ t1p1h: '0', t1p1b: '0', t1p2h: '0', t1p2b: '0', t2p1h: '0', t2p1b: '0', t2p2h: '0', t2p2b: '0' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (players.length >= 4) {
-      setT1p1(players[0].id);
-      setT1p2(players[1].id);
-      setT2p1(players[2].id);
-      setT2p2(players[3].id);
+      setT1p1(players[0].id); setT1p2(players[1].id);
+      setT2p1(players[2].id); setT2p2(players[3].id);
     } else if (players.length >= 2) {
-      setT1p1(players[0].id);
-      setT1p2(players[1].id);
+      setT1p1(players[0].id); setT1p2(players[1].id);
     }
   }, [players]);
 
+  function setBag(key, val) { setBags(b => ({ ...b, [key]: val })); }
+
   const playerOptions = players.map(p => <option key={p.id} value={p.id}>{p.name}</option>);
+  const getName = id => players.find(p => p.id === id)?.name || '?';
 
   async function handleSubmit() {
     setError('');
@@ -180,30 +195,28 @@ function LogGame({ players, onGameLogged, toast }) {
 
     setSaving(true);
     const { error: err } = await supabase.from('games').insert({
-      t1_p1: t1p1, t1_p2: t1p2,
-      t2_p1: t2p1, t2_p2: t2p2,
+      t1_p1: t1p1, t1_p2: t1p2, t2_p1: t2p1, t2_p2: t2p2,
       t1_score: parseInt(t1score) || 0,
       t2_score: parseInt(t2score) || 0,
-      t1_hole: parseInt(t1hole) || 0,
-      t2_hole: parseInt(t2hole) || 0,
-      t1_board: parseInt(t1board) || 0,
-      t2_board: parseInt(t2board) || 0,
+      t1_hole: (parseInt(bags.t1p1h)||0) + (parseInt(bags.t1p2h)||0),
+      t2_hole: (parseInt(bags.t2p1h)||0) + (parseInt(bags.t2p2h)||0),
+      t1_board: (parseInt(bags.t1p1b)||0) + (parseInt(bags.t1p2b)||0),
+      t2_board: (parseInt(bags.t2p1b)||0) + (parseInt(bags.t2p2b)||0),
+      t1_p1_hole: parseInt(bags.t1p1h)||0, t1_p1_board: parseInt(bags.t1p1b)||0,
+      t1_p2_hole: parseInt(bags.t1p2h)||0, t1_p2_board: parseInt(bags.t1p2b)||0,
+      t2_p1_hole: parseInt(bags.t2p1h)||0, t2_p1_board: parseInt(bags.t2p1b)||0,
+      t2_p2_hole: parseInt(bags.t2p2h)||0, t2_p2_board: parseInt(bags.t2p2b)||0,
     });
     setSaving(false);
     if (err) { setError(err.message); return; }
     toast('Game logged! 🎯');
     onGameLogged();
     setT1score('11'); setT2score('0');
-    setT1hole('0'); setT2hole('0');
-    setT1board('0'); setT2board('0');
+    setBags({ t1p1h:'0', t1p1b:'0', t1p2h:'0', t1p2b:'0', t2p1h:'0', t2p1b:'0', t2p2h:'0', t2p2b:'0' });
   }
 
   if (players.length < 4) {
-    return (
-      <div className="card">
-        <div className="empty">You need at least 4 players to log a 2v2 game.<br />Add more players in the Players tab.</div>
-      </div>
-    );
+    return <div className="card"><div className="empty">You need at least 4 players to log a 2v2 game.<br />Add more in the Players tab.</div></div>;
   }
 
   return (
@@ -237,7 +250,7 @@ function LogGame({ players, onGameLogged, toast }) {
 
       <hr className="divider" />
       <div style={{ marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Scores</div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: '1rem', alignItems: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: '1.25rem', alignItems: 'flex-end' }}>
         <div className="form-group" style={{ flex: 'unset' }}>
           <label>Team 1</label>
           <input type="number" className="score-input" min="0" max="11" value={t1score} onChange={e => setT1score(e.target.value)} />
@@ -249,15 +262,18 @@ function LogGame({ players, onGameLogged, toast }) {
         </div>
       </div>
 
-      <div style={{ marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Bag stats</div>
-      <div className="score-inputs">
-        <div className="form-group"><label>T1 in hole</label><input type="number" min="0" value={t1hole} onChange={e => setT1hole(e.target.value)} /></div>
-        <div className="form-group"><label>T1 on board</label><input type="number" min="0" value={t1board} onChange={e => setT1board(e.target.value)} /></div>
-        <div className="form-group"><label>T2 in hole</label><input type="number" min="0" value={t2hole} onChange={e => setT2hole(e.target.value)} /></div>
-        <div className="form-group"><label>T2 on board</label><input type="number" min="0" value={t2board} onChange={e => setT2board(e.target.value)} /></div>
-      </div>
+      <hr className="divider" />
+      <div style={{ marginBottom: 10, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', fontWeight: 500 }}>Bag stats — per player</div>
 
-      <button className="btn btn-primary" onClick={handleSubmit} disabled={saving} style={{ marginTop: 8 }}>
+      <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Team 1</div>
+      <BagInputRow label={getName(t1p1)} name={t1p1} hole={bags.t1p1h} board={bags.t1p1b} onHole={v => setBag('t1p1h', v)} onBoard={v => setBag('t1p1b', v)} players={players} playerIndex={0} />
+      <BagInputRow label={getName(t1p2)} name={t1p2} hole={bags.t1p2h} board={bags.t1p2b} onHole={v => setBag('t1p2h', v)} onBoard={v => setBag('t1p2b', v)} players={players} playerIndex={1} />
+
+      <div style={{ marginTop: 12, marginBottom: 6, fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Team 2</div>
+      <BagInputRow label={getName(t2p1)} name={t2p1} hole={bags.t2p1h} board={bags.t2p1b} onHole={v => setBag('t2p1h', v)} onBoard={v => setBag('t2p1b', v)} players={players} playerIndex={2} />
+      <BagInputRow label={getName(t2p2)} name={t2p2} hole={bags.t2p2h} board={bags.t2p2b} onHole={v => setBag('t2p2h', v)} onBoard={v => setBag('t2p2b', v)} players={players} playerIndex={3} />
+
+      <button className="btn btn-primary" onClick={handleSubmit} disabled={saving} style={{ marginTop: 16 }}>
         {saving ? 'Saving...' : 'Log Game →'}
       </button>
     </div>
@@ -276,21 +292,17 @@ function Players({ players, onRefresh, toast }) {
     if (players.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
       setError('A player with that name already exists.'); return;
     }
-    setSaving(true);
-    setError('');
+    setSaving(true); setError('');
     const { error: err } = await supabase.from('players').insert({ name: trimmed });
     setSaving(false);
     if (err) { setError(err.message); return; }
-    setName('');
-    toast(`${trimmed} added!`);
-    onRefresh();
+    setName(''); toast(`${trimmed} added!`); onRefresh();
   }
 
   async function removePlayer(id, playerName) {
     if (!window.confirm(`Remove ${playerName}? Their game history will be kept.`)) return;
     await supabase.from('players').delete().eq('id', id);
-    toast('Player removed.');
-    onRefresh();
+    toast('Player removed.'); onRefresh();
   }
 
   return (
@@ -301,23 +313,16 @@ function Players({ players, onRefresh, toast }) {
         <div className="form-row">
           <div className="form-group">
             <label>Name</label>
-            <input
-              type="text" placeholder="e.g. Jordan"
-              value={name} onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addPlayer()}
-            />
+            <input type="text" placeholder="e.g. Jordan" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPlayer()} />
           </div>
           <button className="btn btn-primary" onClick={addPlayer} disabled={saving} style={{ alignSelf: 'flex-end' }}>
             {saving ? '...' : 'Add'}
           </button>
         </div>
       </div>
-
       <div className="card">
         <div className="card-title">Roster ({players.length})</div>
-        {players.length === 0 ? (
-          <div className="empty">No players yet.</div>
-        ) : (
+        {players.length === 0 ? <div className="empty">No players yet.</div> : (
           players.map((p, i) => (
             <div key={p.id} className="player-chip">
               <Avatar name={p.name} index={i} size={32} />
@@ -338,17 +343,13 @@ function HeadToHead({ players, games }) {
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    if (players.length >= 2) {
-      setP1(players[0].id);
-      setP2(players[1].id);
-    }
+    if (players.length >= 2) { setP1(players[0].id); setP2(players[1].id); }
   }, [players]);
 
   function compute() {
     if (!p1 || !p2 || p1 === p2) return;
     const shared = games.filter(g => {
-      const t1 = [g.t1_p1, g.t1_p2];
-      const t2 = [g.t2_p1, g.t2_p2];
+      const t1 = [g.t1_p1, g.t1_p2]; const t2 = [g.t2_p1, g.t2_p2];
       return (t1.includes(p1) && t2.includes(p2)) || (t1.includes(p2) && t2.includes(p1));
     });
     let p1wins = 0, p2wins = 0;
@@ -366,9 +367,7 @@ function HeadToHead({ players, games }) {
   return (
     <div className="card">
       <div className="card-title">Head-to-Head</div>
-      {players.length < 2 ? (
-        <div className="empty">Need at least 2 players.</div>
-      ) : (
+      {players.length < 2 ? <div className="empty">Need at least 2 players.</div> : (
         <>
           <div className="form-row" style={{ marginBottom: '1rem' }}>
             <div className="form-group">
@@ -385,45 +384,27 @@ function HeadToHead({ players, games }) {
             </div>
             <button className="btn" onClick={compute} style={{ alignSelf: 'flex-end' }}>View →</button>
           </div>
-
           {result && (
-            result.shared.length === 0 ? (
-              <div className="empty">No games between {p1name} and {p2name} on opposing teams.</div>
-            ) : (
+            result.shared.length === 0 ? <div className="empty">No games between {p1name} and {p2name} on opposing teams.</div> : (
               <>
                 <div className="h2h-result-grid">
-                  <div className="h2h-stat">
-                    <div className="h2h-name">{p1name}</div>
-                    <div className="h2h-wins">{result.p1wins}</div>
-                  </div>
-                  <div className="h2h-stat">
-                    <div className="h2h-name">Games</div>
-                    <div className="h2h-wins" style={{ color: 'var(--text2)' }}>{result.shared.length}</div>
-                  </div>
-                  <div className="h2h-stat">
-                    <div className="h2h-name">{p2name}</div>
-                    <div className="h2h-wins">{result.p2wins}</div>
-                  </div>
+                  <div className="h2h-stat"><div className="h2h-name">{p1name}</div><div className="h2h-wins">{result.p1wins}</div></div>
+                  <div className="h2h-stat"><div className="h2h-name">Games</div><div className="h2h-wins" style={{ color: 'var(--text2)' }}>{result.shared.length}</div></div>
+                  <div className="h2h-stat"><div className="h2h-name">{p2name}</div><div className="h2h-wins">{result.p2wins}</div></div>
                 </div>
                 <div className="table-wrap">
                   <table>
-                    <thead>
-                      <tr><th>Team 1</th><th>Score</th><th>Score</th><th>Team 2</th></tr>
-                    </thead>
+                    <thead><tr><th>Team 1</th><th>Score</th><th>Score</th><th>Team 2</th></tr></thead>
                     <tbody>
                       {[...result.shared].sort((a,b)=>new Date(b.played_at)-new Date(a.played_at)).map(g => {
                         const t1win = g.t1_score > g.t2_score;
                         const getName = id => players.find(p => p.id === id)?.name || '?';
                         return (
                           <tr key={g.id}>
-                            <td style={{ fontWeight: [g.t1_p1,g.t1_p2].includes(p1) && t1win ? 600 : 400 }}>
-                              {getName(g.t1_p1)} & {getName(g.t1_p2)}
-                            </td>
+                            <td style={{ fontWeight: [g.t1_p1,g.t1_p2].includes(p1) && t1win ? 600 : 400 }}>{getName(g.t1_p1)} & {getName(g.t1_p2)}</td>
                             <td><span className={`badge ${t1win ? 'badge-win' : 'badge-loss'}`}>{g.t1_score}</span></td>
                             <td><span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span></td>
-                            <td style={{ fontWeight: [g.t2_p1,g.t2_p2].includes(p1) && !t1win ? 600 : 400 }}>
-                              {getName(g.t2_p1)} & {getName(g.t2_p2)}
-                            </td>
+                            <td style={{ fontWeight: [g.t2_p1,g.t2_p2].includes(p1) && !t1win ? 600 : 400 }}>{getName(g.t2_p1)} & {getName(g.t2_p2)}</td>
                           </tr>
                         );
                       })}
@@ -445,6 +426,12 @@ function buildStats(players, games) {
   players.forEach(p => { stats[p.id] = { wins: 0, losses: 0, pts: 0, hole: 0, board: 0 }; });
   games.forEach(g => {
     const t1win = g.t1_score > g.t2_score;
+    const playerBags = {
+      [g.t1_p1]: { hole: g.t1_p1_hole || 0, board: g.t1_p1_board || 0 },
+      [g.t1_p2]: { hole: g.t1_p2_hole || 0, board: g.t1_p2_board || 0 },
+      [g.t2_p1]: { hole: g.t2_p1_hole || 0, board: g.t2_p1_board || 0 },
+      [g.t2_p2]: { hole: g.t2_p2_hole || 0, board: g.t2_p2_board || 0 },
+    };
     [[g.t1_p1, g.t1_p2], [g.t2_p1, g.t2_p2]].forEach((team, ti) => {
       const isT1 = ti === 0;
       const won = isT1 ? t1win : !t1win;
@@ -452,8 +439,8 @@ function buildStats(players, games) {
         if (!stats[pid]) return;
         if (won) stats[pid].wins++; else stats[pid].losses++;
         stats[pid].pts += isT1 ? g.t1_score : g.t2_score;
-        stats[pid].hole += Math.round((isT1 ? g.t1_hole : g.t2_hole) / 2);
-        stats[pid].board += Math.round((isT1 ? g.t1_board : g.t2_board) / 2);
+        stats[pid].hole += playerBags[pid]?.hole || 0;
+        stats[pid].board += playerBags[pid]?.board || 0;
       });
     });
   });
@@ -462,7 +449,6 @@ function buildStats(players, games) {
 
 const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H'];
 
-// ---- ROOT APP ----
 export default function App() {
   const [tab, setTab] = useState('Leaderboard');
   const [players, setPlayers] = useState([]);
@@ -492,12 +478,10 @@ export default function App() {
   useEffect(() => {
     if (!isConfigured) { setLoading(false); return; }
     fetchData();
-
     const sub = supabase.channel('realtime-all')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, fetchData)
       .subscribe();
-
     return () => supabase.removeChannel(sub);
   }, [fetchData, isConfigured]);
 
@@ -510,7 +494,6 @@ export default function App() {
           <div className="logo">🎯 <span>Cornhole</span></div>
         </div>
       </header>
-
       <nav className="nav">
         <div className="nav-inner">
           {TABS.map(t => (
@@ -518,7 +501,6 @@ export default function App() {
           ))}
         </div>
       </nav>
-
       <main className="main">
         {loading ? <Loading /> : (
           <>
@@ -529,7 +511,6 @@ export default function App() {
           </>
         )}
       </main>
-
       <Toast message={toastMsg} />
     </>
   );
