@@ -149,7 +149,7 @@ function LogGame({ players, onGameLogged, toast }) {
   const [t1p2, setT1p2] = useState('');
   const [t2p1, setT2p1] = useState('');
   const [t2p2, setT2p2] = useState('');
-  const [t1score, setT1score] = useState('21');
+  const [t1score, setT1score] = useState('11');
   const [t2score, setT2score] = useState('0');
   const [t1hole, setT1hole] = useState('0');
   const [t2hole, setT2hole] = useState('0');
@@ -193,7 +193,7 @@ function LogGame({ players, onGameLogged, toast }) {
     if (err) { setError(err.message); return; }
     toast('Game logged! 🎯');
     onGameLogged();
-    setT1score('21'); setT2score('0');
+    setT1score('11'); setT2score('0');
     setT1hole('0'); setT2hole('0');
     setT1board('0'); setT2board('0');
   }
@@ -240,12 +240,12 @@ function LogGame({ players, onGameLogged, toast }) {
       <div style={{ display: 'flex', gap: 12, marginBottom: '1rem', alignItems: 'flex-end' }}>
         <div className="form-group" style={{ flex: 'unset' }}>
           <label>Team 1</label>
-          <input type="number" className="score-input" min="0" max="21" value={t1score} onChange={e => setT1score(e.target.value)} />
+          <input type="number" className="score-input" min="0" max="11" value={t1score} onChange={e => setT1score(e.target.value)} />
         </div>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--text3)', paddingBottom: 6 }}>–</div>
         <div className="form-group" style={{ flex: 'unset' }}>
           <label>Team 2</label>
-          <input type="number" className="score-input" min="0" max="21" value={t2score} onChange={e => setT2score(e.target.value)} />
+          <input type="number" className="score-input" min="0" max="11" value={t2score} onChange={e => setT2score(e.target.value)} />
         </div>
       </div>
 
