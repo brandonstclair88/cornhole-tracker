@@ -765,11 +765,13 @@ export default function App() {
     const margin = winScore - loseScore;
 
     try {
+      const apiKey = process.env.REACT_APP_ANTHROPIC_API_KEY;
+      console.log('API key present:', !!apiKey, apiKey?.slice(0, 8));
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': process.env.REACT_APP_ANTHROPIC_API_KEY,
+          'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
@@ -788,8 +790,10 @@ ${margin >= 9 ? 'It was a total blowout. Be absolutely savage about the losers. 
         })
       });
       const data = await res.json();
+      console.log('API response:', JSON.stringify(data));
       return data.content?.[0]?.text || `${winners} beat ${losers} ${winScore}-${loseScore}!`;
-    } catch {
+    } catch(e) {
+      console.error('API error:', e);
       return `${winners} beat ${losers} ${winScore}-${loseScore}!`;
     }
   }
