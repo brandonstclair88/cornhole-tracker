@@ -135,7 +135,8 @@ function Leaderboard({ players, games, onRefresh, toast }) {
                 <div className={`game-team${!t1win ? ' winner' : ''}`} style={{ textAlign: 'right' }}>{t2p1} & {t2p2}</div>
                 <button className="btn btn-sm btn-danger" onClick={async () => {
                   if (!window.confirm('Delete this game?')) return;
-                  await supabase.from('games').delete().eq('id', g.id);
+                  const { error, count } = await supabase.from('games').delete({ count: 'exact' }).eq('id', g.id);
+                  if (error) { alert('Delete failed: ' + error.message); return; }
                   toast('Game deleted.');
                   onRefresh();
                 }}>✕</button>
