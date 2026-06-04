@@ -753,51 +753,6 @@ export default function App() {
     setTimeout(() => setToastMsg(''), 2500);
   }, []);
 
-  async function generateGameResult(game, playerMap) {
-    const getName = id => playerMap[id] || '?';
-    const w1 = getName(game.t1_p1), w2 = getName(game.t1_p2);
-    const l1 = getName(game.t2_p1), l2 = getName(game.t2_p2);
-    const t1wins = game.t1_score > game.t2_score;
-    const winners = t1wins ? `${w1} & ${w2}` : `${l1} & ${l2}`;
-    const losers = t1wins ? `${l1} & ${l2}` : `${w1} & ${w2}`;
-    const winScore = t1wins ? game.t1_score : game.t2_score;
-    const loseScore = t1wins ? game.t2_score : game.t1_score;
-    const margin = winScore - loseScore;
-
-    try {
-      const apiKey = process.env.REACT_APP_ANTHROPIC_API_KEY;
-      console.log('API key present:', !!apiKey, apiKey?.slice(0, 8));
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 100,
-          messages: [{
-            role: 'user',
-            content: `You are a trash-talking sports announcer for a work cornhole league. Write ONE short notification (1-2 sentences, no quotes, no emojis) about this game result. Be funny, savage, and use their actual names. DO NOT just state the score — roast the losers or hype the winners.
-
-Winners: ${winners}
-Losers: ${losers}  
-Score: ${winScore}-${loseScore}
-${margin >= 9 ? 'It was a total blowout. Be absolutely savage about the losers. Make fun of how bad they lost.' : margin <= 2 ? 'It was extremely close. Make it dramatic like it was the championship.' : 'Solid win. Be cocky about the winners, throw mild shade at the losers.'}`
-          }]
-        })
-      });
-      const data = await res.json();
-      console.log('API response:', JSON.stringify(data));
-      return data.content?.[0]?.text || `${winners} beat ${losers} ${winScore}-${loseScore}!`;
-    } catch(e) {
-      console.error('API error:', e);
-      return `${winners} beat ${losers} ${winScore}-${loseScore}!`;
-    }
-  }
-
   const fetchData = useCallback(async () => {
     if (!isConfigured) return;
     const [{ data: ps }, { data: gs }] = await Promise.all([
@@ -815,11 +770,52 @@ ${margin >= 9 ? 'It was a total blowout. Be absolutely savage about the losers. 
       const game = payload.new;
       if (game.id === latestGameId.current) return;
       latestGameId.current = game.id;
+
       const { data: ps } = await supabase.from('players').select('*');
       const playerMap = {};
       (ps || []).forEach(p => { playerMap[p.id] = p.name; });
-      const msg = await generateGameResult(game, playerMap);
-      setGameResult(msg);
+      const getName = id => playerMap[id] || '?';
+
+      const t1wins = game.t1_score > game.t2_score;
+      const winners = t1wins ? `${getName(game.t1_p1)} & ${getName(game.t1_p2)}` : `${getName(game.t2_p1)} & ${getName(game.t2_p2)}`;
+      const losers = t1wins ? `${getName(game.t2_p1)} & ${getName(game.t2_p2)}` : `${getName(game.t1_p1)} & ${getName(game.t1_p2)}`;
+      const winScore = t1wins ? game.t1_score : game.t2_score;
+      const loseScore = t1wins ? game.t2_score : game.t1_score;
+      const margin = winScore - loseScore;
+
+      setGameResult(`${winners} beat ${losers} ${winScore}–${loseScore}...`);
+
+      try {
+        const apiKey = process.env.REACT_APP_ANTHROPIC_API_KEY;
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 120,
+            messages: [{
+              role: 'user',
+              content: `You are a trash-talking sports announcer for a work cornhole league. Write ONE short notification (1-2 sentences, no quotes, no emojis) about this game result. Be funny, savage, and use their actual names. DO NOT just state the score — roast the losers or hype the winners.
+
+Winners: ${winners}
+Losers: ${losers}
+Score: ${winScore}-${loseScore}
+${margin >= 9 ? 'Total blowout. Be absolutely savage and merciless about the losers.' : margin <= 2 ? 'Extremely close game. Make it sound like the most dramatic moment in sports history.' : 'Solid win. Be cocky about the winners and throw shade at the losers.'}`
+            }]
+          })
+        });
+        const data = await res.json();
+        console.log('API response:', JSON.stringify(data));
+        const msg = data.content?.[0]?.text;
+        if (msg) setGameResult(msg);
+      } catch(e) {
+        console.error('API error:', e);
+      }
     }
   }, [fetchData]);
 
