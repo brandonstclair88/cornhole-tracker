@@ -155,7 +155,7 @@ export default function TournamentTab({ players, games, toast }) {
 
   const fetchSessionData = useCallback(async () => {
     const now = new Date();
-    const currentSession = testMode ? { type: 'morning', opensAt: 6*60, locksAt: 10*60, status: 'open' } : getCurrentSession(now);
+    const currentSession = { type: 'morning', opensAt: 6*60, locksAt: 10*60, status: 'open' };
     setSession(currentSession);
 
     if (!currentSession || currentSession.status === 'done') {
@@ -239,6 +239,10 @@ export default function TournamentTab({ players, games, toast }) {
     setWeeklyStandings(standings);
     setLoading(false);
   }, [players, games, weekStart]);
+
+  useEffect(() => {
+    fetchSessionData();
+  }, [testMode]);
 
   useEffect(() => {
     fetchSessionData();
@@ -459,9 +463,9 @@ export default function TournamentTab({ players, games, toast }) {
         </button>
       </div>
 
-      {!testMode && !isWeekday() ? (
+      {(!testMode && !isWeekday()) ? (
         <div className="card"><div className="empty">No tournament today — see you Monday! 🎯</div></div>
-      ) : !testMode && (!session || session.status === 'done') ? (
+      ) : (!testMode && (!session || session.status === 'done')) ? (
         <div className="card"><div className="empty">Both sessions done for today. Good hustle! 💪</div></div>
       ) : (
         <>
