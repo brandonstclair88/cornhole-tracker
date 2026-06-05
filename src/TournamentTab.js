@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 import { OneSignalManager } from './OneSignalManager';
 import {
   getCurrentSession, minutesUntilLock, formatCountdown,
-  getWeekStart, generateTeams, isWeekday
+  getWeekStart, generateTeams, isWeekday, getWeeklyTeammates
 } from './tournamentUtils';
 
 const AVATAR_COLORS = [
@@ -22,14 +22,8 @@ function Avatar({ name, index, size = 28 }) {
   );
 }
 
-async function generateAIPreview(team1, team2, playerMap, games) {
+async function generateAIPreview(t1names, t2names, h2hCount) {
   try {
-    const t1names = `${playerMap[team1[0]?.id] || '?'} & ${playerMap[team1[1]?.id] || '?'}`;
-    const t2names = `${playerMap[team2[0]?.id] || '?'} & ${playerMap[team2[1]?.id] || '?'}`;
-    const h2h = games.filter(g => {
-      const all = [g.t1_p1, g.t1_p2, g.t2_p1, g.t2_p2];
-      return team1.concat(team2).every(p => all.includes(p?.id));
-    });
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -44,21 +38,110 @@ async function generateAIPreview(team1, team2, playerMap, games) {
         temperature: 1.0,
         messages: [{
           role: 'user',
-          content: `You're a hype announcer for a work cornhole tournament. Write a short (1-2 sentence) pre-game trash talk announcement for this matchup. Use their names. Be funny and savage. No quotes, no emojis.\n\nTeam 1: ${t1names}\nTeam 2: ${t2names}\nPrevious matchups: ${h2h.length}\n\nBe unpredictable and creative.`
+          content: `You're a hype announcer for a work cornhole tournament. Write a short (1-2 sentence) pre-game trash talk for this matchup. Use their names. Be funny and savage. No quotes, no emojis.\n\nTeam 1: ${t1names}\nTeam 2: ${t2names}\nPrevious matchups: ${h2hCount}\n\nBe unpredictable and creative.`
         }]
       })
     });
     const data = await res.json();
-    return data.content?.[0]?.text || `${t1names} vs ${t2names} — let's go!`;
+    return data.content?.[0]?.text || null;
   } catch (e) {
     return null;
   }
+}
+
+// Pick next 4 players for a game from the session pool
+// Prioritizes players who have played least this session
+function pickNextGame(allPlayers, sessionGames, sessionPlayerIds, allGames, weekStart) {
+  // Count games played this session per player
+  const sessionPlayCount = {};
+  sessionPlayerIds.forEach(id => { sessionPlayCount[id] = 0; });
+  sessionGames.forEach(g => {
+    [g.t1_p1, g.t1_p2, g.t2_p1, g.t2_p2].forEach(id => {
+      if (sessionPlayCount[id] !== undefined) sessionPlayCount[id]++;
+    });
+  });
+
+  // Sort by least played this session, then by win %
+  const stats = {};
+  allPlayers.forEach(p => { stats[p.id] = { wins: 0, losses: 0 }; });
+  allGames.forEach(g => {
+    const t1win = g.t1_score > g.t2_score;
+    [[g.t1_p1, g.t1_p2], [g.t2_p1, g.t2_p2]].forEach((team, ti) => {
+      team.forEach(pid => {
+        if (!stats[pid]) return;
+        if (ti === 0 ? t1win : !t1win) stats[pid].wins++;
+        else stats[pid].losses++;
+      });
+    });
+  });
+
+  const pool = sessionPlayerIds
+    .map(id => allPlayers.find(p => p.id === id))
+    .filter(Boolean)
+    .sort((a, b) => {
+      const playDiff = sessionPlayCount[a.id] - sessionPlayCount[b.id];
+      if (playDiff !== 0) return playDiff;
+      const wa = stats[a.id].wins / (stats[a.id].wins + stats[a.id].losses || 1);
+      const wb = stats[b.id].wins / (stats[b.id].wins + stats[b.id].losses || 1);
+      return wb - wa;
+    });
+
+  if (pool.length < 4) return null;
+  return pool.slice(0, 4);
+}
+
+// Balance 4 players into two teams, top 2 split, avoid repeat teammates
+async function balanceTeams(fourPlayers, allGames, weekStart, allPlayers) {
+  const stats = {};
+  allPlayers.forEach(p => { stats[p.id] = { wins: 0, losses: 0 }; });
+  allGames.forEach(g => {
+    const t1win = g.t1_score > g.t2_score;
+    [[g.t1_p1, g.t1_p2], [g.t2_p1, g.t2_p2]].forEach((team, ti) => {
+      team.forEach(pid => {
+        if (!stats[pid]) return;
+        if (ti === 0 ? t1win : !t1win) stats[pid].wins++;
+        else stats[pid].losses++;
+      });
+    });
+  });
+
+  const winPct = p => {
+    const s = stats[p.id] || { wins: 0, losses: 0 };
+    return s.wins / (s.wins + s.losses || 1);
+  };
+
+  const sorted = [...fourPlayers].sort((a, b) => winPct(b) - winPct(a));
+  const top2 = sorted.slice(0, 2);
+  const rest = sorted.slice(2);
+
+  const weeklyTeammates = await getWeeklyTeammates(weekStart);
+
+  const combos = [
+    [[top2[0], rest[0]], [top2[1], rest[1]]],
+    [[top2[0], rest[1]], [top2[1], rest[0]]],
+  ];
+
+  let best = null;
+  let bestScore = Infinity;
+  combos.forEach(([t1, t2]) => {
+    const skillDiff = Math.abs((winPct(t1[0]) + winPct(t1[1])) - (winPct(t2[0]) + winPct(t2[1])));
+    const t1key = [t1[0].id, t1[1].id].sort().join('-');
+    const t2key = [t2[0].id, t2[1].id].sort().join('-');
+    const repeatPenalty = ((weeklyTeammates[t1key] || 0) + (weeklyTeammates[t2key] || 0)) * 0.5;
+    const score = skillDiff + repeatPenalty;
+    if (score < bestScore) { bestScore = score; best = { team1: t1, team2: t2 }; }
+  });
+
+  return best;
 }
 
 export default function TournamentTab({ players, games, toast }) {
   const [session, setSession] = useState(null);
   const [dbSession, setDbSession] = useState(null);
   const [checkins, setCheckins] = useState([]);
+  const [sessionGames, setSessionGames] = useState([]);
+  const [currentGame, setCurrentGame] = useState(null);
+  const [upNext, setUpNext] = useState(null);
   const [myPlayerId, setMyPlayerId] = useState(localStorage.getItem('myPlayerId') || '');
   const [loading, setLoading] = useState(true);
   const [locking, setLocking] = useState(false);
@@ -96,11 +179,45 @@ export default function TournamentTab({ players, games, toast }) {
         .select('*, players(*)')
         .eq('session_id', existing.id);
       setCheckins(ci || []);
+
+      // Load session games
+      const { data: sg } = await supabase
+        .from('games')
+        .select('*')
+        .eq('tournament_session_id', existing.id)
+        .order('played_at', { ascending: false });
+      setSessionGames(sg || []);
+
+      // Determine current game (most recent unfinished) and up next
+      if (existing.status === 'locked' || existing.status === 'in_progress') {
+        const playerIds = (ci || []).map(c => c.player_id);
+
+        // Current game = team1/team2 on the session record
+        if (existing.team1_p1) {
+          setCurrentGame({
+            team1: [existing.team1_p1, existing.team1_p2],
+            team2: [existing.team2_p1, existing.team2_p2],
+            aiPreview: existing.ai_preview,
+          });
+        }
+
+        // Compute up next
+        if (playerIds.length > 4 && sg) {
+          const nextFour = pickNextGame(players, sg, playerIds, games, weekStart);
+          if (nextFour) {
+            const balanced = await balanceTeams(nextFour, games, weekStart, players);
+            if (balanced) setUpNext(balanced);
+          }
+        }
+      }
     } else {
       setCheckins([]);
+      setSessionGames([]);
+      setCurrentGame(null);
+      setUpNext(null);
     }
 
-    // Weekly standings from tournament games
+    // Weekly standings
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
     const standings = {};
@@ -136,8 +253,7 @@ export default function TournamentTab({ players, games, toast }) {
 
   useEffect(() => {
     if (!session) return;
-    const now = new Date();
-    const minsLeft = minutesUntilLock(session, now);
+    const minsLeft = minutesUntilLock(session, new Date());
     if (minsLeft !== null) setCountdown(formatCountdown(minsLeft));
   }, [session]);
 
@@ -145,6 +261,7 @@ export default function TournamentTab({ players, games, toast }) {
     if (!dbSession) return;
     const sub = supabase.channel('checkins-' + dbSession.id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_checkins', filter: `session_id=eq.${dbSession.id}` }, fetchSessionData)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'games', filter: `tournament_session_id=eq.${dbSession.id}` }, fetchSessionData)
       .subscribe();
     return () => supabase.removeChannel(sub);
   }, [dbSession, fetchSessionData]);
@@ -154,10 +271,8 @@ export default function TournamentTab({ players, games, toast }) {
     const now = new Date();
     const cur = getCurrentSession(now);
     if (!cur) return null;
-    const locksAt = new Date();
-    locksAt.setHours(Math.floor(cur.locksAt / 60), cur.locksAt % 60, 0, 0);
-    const opensAt = new Date();
-    opensAt.setHours(Math.floor(cur.opensAt / 60), cur.opensAt % 60, 0, 0);
+    const locksAt = new Date(); locksAt.setHours(Math.floor(cur.locksAt / 60), cur.locksAt % 60, 0, 0);
+    const opensAt = new Date(); opensAt.setHours(Math.floor(cur.opensAt / 60), cur.opensAt % 60, 0, 0);
     const { data, error } = await supabase.from('tournament_sessions').insert({
       session_type: cur.type,
       session_date: now.toISOString().split('T')[0],
@@ -199,37 +314,84 @@ export default function TournamentTab({ players, games, toast }) {
       }, 5 * 60 * 1000);
       return;
     }
+
     setLocking(true);
     const checkedInPlayers = checkins.map(c => c.players).filter(Boolean);
-    const result = await generateTeams(checkedInPlayers, players, games, weekStart);
-    if (!result) { setLocking(false); toast('Not enough players to generate teams'); return; }
+    const playerIds = checkedInPlayers.map(p => p.id);
+
+    // Pick first 4 for the first game
+    const firstFour = pickNextGame(checkedInPlayers, [], playerIds, games, weekStart);
+    if (!firstFour) { setLocking(false); toast('Not enough players'); return; }
+
+    const balanced = await balanceTeams(firstFour, games, weekStart, players);
+    if (!balanced) { setLocking(false); toast('Could not balance teams'); return; }
+
     const playerMap = {};
     players.forEach(p => { playerMap[p.id] = p.name; });
-    const t1 = result.team1;
-    const t2 = result.team2;
-    const t1names = `${playerMap[t1[0]?.id]} & ${playerMap[t1[1]?.id]}`;
-    const t2names = `${playerMap[t2[0]?.id]} & ${playerMap[t2[1]?.id]}`;
-    const aiPreview = await generateAIPreview(t1, t2, playerMap, games);
+    const t1 = balanced.team1;
+    const t2 = balanced.team2;
+    const t1names = `${playerMap[t1[0].id]} & ${playerMap[t1[1].id]}`;
+    const t2names = `${playerMap[t2[0].id]} & ${playerMap[t2[1].id]}`;
+    const aiPreview = await generateAIPreview(t1names, t2names, 0);
+
     await supabase.from('tournament_sessions').update({
-      status: 'locked',
-      team1_p1: t1[0]?.id, team1_p2: t1[1]?.id,
-      team2_p1: t2[0]?.id, team2_p2: t2[1]?.id,
-      bye_player: result.byePlayer?.id || null,
+      status: 'in_progress',
+      team1_p1: t1[0].id, team1_p2: t1[1].id,
+      team2_p1: t2[0].id, team2_p2: t2[1].id,
+      bye_player: checkedInPlayers.length === 5 ? checkedInPlayers.find(p => !firstFour.find(f => f.id === p.id))?.id : null,
       ai_preview: aiPreview,
+      current_queue: playerIds,
     }).eq('id', dbSession.id);
+
     await OneSignalManager.notifyTeamsAnnounced(t1names, t2names, aiPreview);
     setLocking(false);
     fetchSessionData();
   }
 
+  // Called when a game is logged — advance to next matchup
+  async function advanceToNextGame() {
+    if (!dbSession) return;
+    const playerIds = checkins.map(c => c.player_id);
+    const { data: sg } = await supabase.from('games').select('*').eq('tournament_session_id', dbSession.id);
+    const nextFour = pickNextGame(players, sg || [], playerIds, games, weekStart);
+
+    if (!nextFour || nextFour.length < 4) {
+      await supabase.from('tournament_sessions').update({ status: 'completed' }).eq('id', dbSession.id);
+      toast('Session complete! Great games everyone 🎯');
+      fetchSessionData();
+      return;
+    }
+
+    const balanced = await balanceTeams(nextFour, games, weekStart, players);
+    if (!balanced) return;
+
+    const playerMap = {};
+    players.forEach(p => { playerMap[p.id] = p.name; });
+    const t1 = balanced.team1;
+    const t2 = balanced.team2;
+    const t1names = `${playerMap[t1[0].id]} & ${playerMap[t1[1].id]}`;
+    const t2names = `${playerMap[t2[0].id]} & ${playerMap[t2[1].id]}`;
+    const aiPreview = await generateAIPreview(t1names, t2names, 0);
+
+    await supabase.from('tournament_sessions').update({
+      team1_p1: t1[0].id, team1_p2: t1[1].id,
+      team2_p1: t2[0].id, team2_p2: t2[1].id,
+      ai_preview: aiPreview,
+    }).eq('id', dbSession.id);
+
+    await OneSignalManager.notifyTeamsAnnounced(t1names, t2names, aiPreview);
+    toast(`Next up: ${t1names} vs ${t2names}`);
+    fetchSessionData();
+  }
+
   async function getBagForecast() {
-    if (!dbSession?.team1_p1) { toast('Teams not set yet'); return; }
+    if (!currentGame) { toast('No active game yet'); return; }
     setForecastLoading(true);
     const playerMap = {};
     players.forEach(p => { playerMap[p.id] = p.name; });
     try {
-      const t1names = `${playerMap[dbSession.team1_p1]} & ${playerMap[dbSession.team1_p2]}`;
-      const t2names = `${playerMap[dbSession.team2_p1]} & ${playerMap[dbSession.team2_p2]}`;
+      const t1names = `${playerMap[currentGame.team1[0]]} & ${playerMap[currentGame.team1[1]]}`;
+      const t2names = `${playerMap[currentGame.team2[0]]} & ${playerMap[currentGame.team2[1]]}`;
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -257,7 +419,8 @@ export default function TournamentTab({ players, games, toast }) {
   }
 
   const myCheckin = checkins.find(c => c.player_id === myPlayerId);
-  const isLocked = dbSession?.status === 'locked' || dbSession?.status === 'completed';
+  const isLocked = dbSession?.status === 'locked' || dbSession?.status === 'in_progress' || dbSession?.status === 'completed';
+  const isInProgress = dbSession?.status === 'in_progress';
   const getName = id => players.find(p => p.id === id)?.name || '?';
   const getIndex = id => players.findIndex(p => p.id === id);
 
@@ -265,6 +428,7 @@ export default function TournamentTab({ players, games, toast }) {
 
   return (
     <div>
+      {/* Player selector */}
       {!myPlayerId && (
         <div className="card" style={{ borderColor: 'var(--accent)' }}>
           <div className="card-title">Who are you?</div>
@@ -292,57 +456,69 @@ export default function TournamentTab({ players, games, toast }) {
       ) : !session || session.status === 'done' ? (
         <div className="card"><div className="empty">Both sessions done for today. Good hustle! 💪</div></div>
       ) : (
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div>
-              <div className="card-title" style={{ marginBottom: 2 }}>
-                {session.type === 'morning' ? '☀️ Morning' : '🌆 Afternoon'} Session
-              </div>
-              {session.status === 'open' && countdown && (
-                <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-                  Locks in <strong style={{ color: 'var(--accent)' }}>{countdown}</strong>
-                </div>
-              )}
-            </div>
-            {session.status === 'open' && !isLocked && myPlayerId && (
-              <button className={`btn ${myCheckin ? '' : 'btn-primary'}`} onClick={handleCheckin}
-                style={myCheckin ? { borderColor: 'var(--green)', color: 'var(--green)' } : {}}>
-                {myCheckin ? "✓ I'm In — Check Out" : "I'm In 🎯"}
-              </button>
-            )}
-          </div>
-
-          {checkins.length > 0 && !isLocked && (
-            <div>
-              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8 }}>Checked in ({checkins.length})</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                {checkins.map(c => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface2)', padding: '4px 10px', borderRadius: 99, fontSize: 13 }}>
-                    <Avatar name={c.players?.name} index={getIndex(c.player_id)} size={18} />{c.players?.name}
+        <>
+          {/* Session check-in card */}
+          {!isLocked && (
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div>
+                  <div className="card-title" style={{ marginBottom: 2 }}>
+                    {session.type === 'morning' ? '☀️ Morning' : '🌆 Afternoon'} Session
                   </div>
-                ))}
+                  {session.status === 'open' && countdown && (
+                    <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+                      Locks in <strong style={{ color: 'var(--accent)' }}>{countdown}</strong>
+                    </div>
+                  )}
+                </div>
+                {session.status === 'open' && myPlayerId && (
+                  <button className={`btn ${myCheckin ? '' : 'btn-primary'}`} onClick={handleCheckin}
+                    style={myCheckin ? { borderColor: 'var(--green)', color: 'var(--green)' } : {}}>
+                    {myCheckin ? "✓ I'm In — Check Out" : "I'm In 🎯"}
+                  </button>
+                )}
               </div>
-              {checkins.length >= 4 ? (
-                <button className="btn btn-primary" onClick={lockSession} disabled={locking} style={{ width: '100%' }}>
-                  {locking ? 'Generating teams...' : '🔒 Lock & Generate Teams'}
-                </button>
-              ) : (
-                <div style={{ fontSize: 12, color: 'var(--text3)' }}>Need {4 - checkins.length} more player{4 - checkins.length !== 1 ? 's' : ''} to play</div>
+
+              {checkins.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8 }}>Checked in ({checkins.length})</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                    {checkins.map(c => (
+                      <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface2)', padding: '4px 10px', borderRadius: 99, fontSize: 13 }}>
+                        <Avatar name={c.players?.name} index={getIndex(c.player_id)} size={18} />{c.players?.name}
+                      </div>
+                    ))}
+                  </div>
+                  {checkins.length >= 4 ? (
+                    <button className="btn btn-primary" onClick={lockSession} disabled={locking} style={{ width: '100%' }}>
+                      {locking ? 'Generating teams...' : '🔒 Lock & Start Session'}
+                    </button>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text3)' }}>Need {4 - checkins.length} more player{4 - checkins.length !== 1 ? 's' : ''} to start</div>
+                  )}
+                </div>
               )}
             </div>
           )}
 
-          {isLocked && dbSession && (
-            <div>
-              {dbSession.ai_preview && (
+          {/* Current game card */}
+          {isInProgress && currentGame && (
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>🎯 Now Playing</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>Game {sessionGames.length + 1}</div>
+              </div>
+
+              {currentGame.aiPreview && (
                 <div style={{ fontSize: 13, color: 'var(--text2)', fontStyle: 'italic', marginBottom: 12, padding: '10px', background: 'var(--surface2)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--accent)' }}>
-                  "{dbSession.ai_preview}"
+                  "{currentGame.aiPreview}"
                 </div>
               )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'center', marginBottom: 12 }}>
                 <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '12px', border: '1px solid rgba(232,197,71,0.3)' }}>
                   <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', marginBottom: 8 }}>Team 1</div>
-                  {[dbSession.team1_p1, dbSession.team1_p2].map(id => (
+                  {currentGame.team1.map(id => (
                     <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                       <Avatar name={getName(id)} index={getIndex(id)} size={22} />
                       <span style={{ fontSize: 13, fontWeight: 500 }}>{getName(id)}</span>
@@ -352,7 +528,7 @@ export default function TournamentTab({ players, games, toast }) {
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--text3)', textAlign: 'center' }}>VS</div>
                 <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '12px', border: '1px solid rgba(76,175,130,0.3)' }}>
                   <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--green)', marginBottom: 8 }}>Team 2</div>
-                  {[dbSession.team2_p1, dbSession.team2_p2].map(id => (
+                  {currentGame.team2.map(id => (
                     <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                       <Avatar name={getName(id)} index={getIndex(id)} size={22} />
                       <span style={{ fontSize: 13, fontWeight: 500 }}>{getName(id)}</span>
@@ -360,14 +536,22 @@ export default function TournamentTab({ players, games, toast }) {
                   ))}
                 </div>
               </div>
-              {dbSession.bye_player && (
+
+              {dbSession?.bye_player && (
                 <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
-                  👋 {getName(dbSession.bye_player)} has a bye — guaranteed spot next session
+                  👋 {getName(dbSession.bye_player)} has a bye this round
                 </div>
               )}
-              <button className="btn" onClick={getBagForecast} disabled={forecastLoading} style={{ width: '100%' }}>
-                {forecastLoading ? 'Consulting the oracle...' : '🔮 Bag Forecast'}
-              </button>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn" onClick={getBagForecast} disabled={forecastLoading} style={{ flex: 1 }}>
+                  {forecastLoading ? 'Consulting oracle...' : '🔮 Bag Forecast'}
+                </button>
+                <button className="btn btn-primary" onClick={advanceToNextGame} style={{ flex: 1 }}>
+                  Game done → Next ▶
+                </button>
+              </div>
+
               {bagForecast && (
                 <div style={{ fontSize: 13, color: 'var(--text2)', fontStyle: 'italic', marginTop: 10, padding: '10px', background: 'var(--surface2)', borderRadius: 'var(--radius)' }}>
                   🔮 {bagForecast}
@@ -375,19 +559,54 @@ export default function TournamentTab({ players, games, toast }) {
               )}
             </div>
           )}
-        </div>
+
+          {/* Up next preview */}
+          {upNext && isInProgress && (
+            <div className="card" style={{ opacity: 0.7 }}>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 10 }}>⏭ Up Next</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {upNext.team1.map(p => <span key={p.id} style={{ fontWeight: 500 }}>{p.name}</span>).reduce((a, b) => [a, ' & ', b])}
+                </div>
+                <span style={{ color: 'var(--text3)' }}>vs</span>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {upNext.team2.map(p => <span key={p.id} style={{ fontWeight: 500 }}>{p.name}</span>).reduce((a, b) => [a, ' & ', b])}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Session game log */}
+          {sessionGames.length > 0 && (
+            <div className="card">
+              <div className="card-title">Session Results ({sessionGames.length} games)</div>
+              {sessionGames.map((g, i) => {
+                const t1win = g.t1_score > g.t2_score;
+                return (
+                  <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < sessionGames.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 13 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text3)', minWidth: 20 }}>G{i + 1}</span>
+                    <span style={{ flex: 1, fontWeight: t1win ? 600 : 400, color: t1win ? 'var(--text)' : 'var(--text2)' }}>{getName(g.t1_p1)} & {getName(g.t1_p2)}</span>
+                    <span className={`badge ${t1win ? 'badge-win' : 'badge-loss'}`}>{g.t1_score}</span>
+                    <span style={{ color: 'var(--text3)', fontSize: 11 }}>–</span>
+                    <span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span>
+                    <span style={{ flex: 1, textAlign: 'right', fontWeight: !t1win ? 600 : 400, color: !t1win ? 'var(--text)' : 'var(--text2)' }}>{getName(g.t2_p1)} & {getName(g.t2_p2)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
+      {/* Weekly standings */}
       {Object.keys(weeklyStandings).some(id => weeklyStandings[id].wins + weeklyStandings[id].losses > 0) && (
         <div className="card">
           <div className="card-title">This Week's Tournament</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr>
-                {['Player','W','L','Win%'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>{h}</th>
-                ))}
-              </tr>
+              <tr>{['Player','W','L','Win%'].map(h => (
+                <th key={h} style={{ textAlign: 'left', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>{h}</th>
+              ))}</tr>
             </thead>
             <tbody>
               {players
@@ -396,7 +615,7 @@ export default function TournamentTab({ players, games, toast }) {
                   const sa = weeklyStandings[a.id]; const sb = weeklyStandings[b.id];
                   return (sb.wins / (sb.wins + sb.losses || 1)) - (sa.wins / (sa.wins + sa.losses || 1));
                 })
-                .map((p) => {
+                .map(p => {
                   const s = weeklyStandings[p.id];
                   const pct = Math.round(s.wins / (s.wins + s.losses) * 100);
                   return (
