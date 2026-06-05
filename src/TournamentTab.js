@@ -414,3 +414,7 @@ export function determineAwardWinners(weeklyStats, players) {
 
   return { master, clown, bagWhisperer, boardHugger, onFire, iceCold, soClose };
 }
+
+export default function TournamentTab({ players, games, toast }) {
+  return <div style={{padding:'2rem',color:'var(--text2)',textAlign:'center'}}>Tournament tab loading... refresh if this persists.</div>;
+}
