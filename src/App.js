@@ -3,7 +3,7 @@ import './index.css';
 import { supabase } from './supabase';
 import { OneSignalManager } from './OneSignalManager';
 import { calculateMVP } from './tournamentUtils';
-import Tournament from './TournamentTab';
+import TournamentTab from './TournamentTab';
 import MasterCornholerTab from './MasterCornholer';
 
 const AVATAR_COLORS = [
@@ -854,7 +854,7 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
             {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} grudgeMatch={grudgeMatch} onGrudgeMatchUsed={() => setGrudgeMatch(null)} />}
             {tab === 'Players' && <Players players={players} onRefresh={fetchData} toast={showToast} />}
             {tab === 'H2H' && <HeadToHead players={players} games={games} />}
-            {tab === 'Tournament' && <Tournament players={players} games={games} toast={showToast} />}
+            {tab === 'Tournament' && <TournamentTab players={players} games={games} toast={showToast} />}
             {tab === 'Master' && <MasterCornholerTab players={players} games={games} />}
           </>
         )}
