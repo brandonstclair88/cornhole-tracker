@@ -63,7 +63,7 @@ Be unpredictable and creative. Different style every time.`
   }
 }
 
-export default function Tournament({ players, games, toast }) {
+export default function TournamentTab({ players, games, toast }) {
   const [session, setSession] = useState(null);
   const [dbSession, setDbSession] = useState(null);
   const [checkins, setCheckins] = useState([]);
