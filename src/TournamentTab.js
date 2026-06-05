@@ -414,3 +414,4 @@ export function determineAwardWinners(weeklyStats, players) {
 
   return { master, clown, bagWhisperer, boardHugger, onFire, iceCold, soClose };
 }
+export default function TournamentTab({ players, games, toast }) { return <div>Tournament coming soon</div>; }
