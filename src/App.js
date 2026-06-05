@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './index.css';
 import { supabase } from './supabase';
 import { OneSignalManager } from './OneSignalManager';
-import { calculateMVP } from './tournament';
+import { calculateMVP } from './tournamentUtils';
 import Tournament from './Tournament';
 import MasterCornholerTab from './MasterCornholer';
 

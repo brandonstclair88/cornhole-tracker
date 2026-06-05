@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import { getWeekStart, getWeekEnd, getWeeklyStats, determineAwardWinners, buildPlayerStats } from './tournament';
+import { getWeekStart, getWeekEnd, getWeeklyStats, determineAwardWinners, buildPlayerStats } from './tournamentUtils';
 
 function Avatar({ name, index, size = 28 }) {
   const COLORS = [
