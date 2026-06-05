@@ -164,11 +164,12 @@ export default function TournamentTab({ players, games, toast }) {
     }
 
     const today = now.toISOString().split('T')[0];
+    const sessionType = testMode ? 'morning' : currentSession.type;
     const { data: sessions } = await supabase
       .from('tournament_sessions')
       .select('*')
       .eq('session_date', today)
-      .eq('session_type', currentSession.type)
+      .eq('session_type', sessionType)
       .limit(1);
 
     const existing = sessions?.[0];
@@ -274,7 +275,9 @@ export default function TournamentTab({ players, games, toast }) {
   async function ensureSession() {
     if (dbSession) return dbSession;
     const now = new Date();
-    const cur = getCurrentSession(now);
+    const cur = testMode
+      ? { type: 'morning', opensAt: 6*60, locksAt: 10*60, status: 'open' }
+      : getCurrentSession(now);
     if (!cur) return null;
     const locksAt = new Date(); locksAt.setHours(Math.floor(cur.locksAt / 60), cur.locksAt % 60, 0, 0);
     const opensAt = new Date(); opensAt.setHours(Math.floor(cur.opensAt / 60), cur.opensAt % 60, 0, 0);
