@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './index.css';
 import { supabase } from './supabase';
+import { OneSignalManager } from './OneSignalManager';
+import { calculateMVP } from './tournament';
+import Tournament from './Tournament';
+import MasterCornholerTab from './MasterCornholer';
 
 const AVATAR_COLORS = [
   { bg: '#2a2318', fg: '#e8c547' },
@@ -72,7 +76,7 @@ function SetupScreen() {
 }
 
 // ---- LEADERBOARD ----
-function Leaderboard({ players, games, onRefresh, toast }) {
+function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
   const stats = buildStats(players, games);
   const sorted = [...players].sort((a, b) => {
     const wa = stats[a.id] ? stats[a.id].wins / (stats[a.id].wins + stats[a.id].losses || 1) : 0;
@@ -115,7 +119,7 @@ function Leaderboard({ players, games, onRefresh, toast }) {
             <table>
               <thead>
                 <tr>
-                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>Hole</th><th>Board</th>
+                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>Hole</th><th>Board</th><th>MVP</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,6 +142,7 @@ function Leaderboard({ players, games, onRefresh, toast }) {
                       <td style={{ color: 'var(--text2)' }}>{s.pts}</td>
                       <td style={{ color: 'var(--text2)' }}>{s.hole}</td>
                       <td style={{ color: 'var(--text2)' }}>{s.board}</td>
+                      <td style={{ color: s.mvps > 0 ? 'var(--accent)' : 'var(--text3)' }}>{s.mvps > 0 ? `⭐${s.mvps}` : '—'}</td>
                     </tr>
                   );
                 })}
@@ -158,9 +163,10 @@ function Leaderboard({ players, games, onRefresh, toast }) {
             const t2p2 = players.find(p => p.id === g.t2_p2)?.name || '?';
             return (
               <div key={g.id} style={{ paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid var(--border)' }}>
-                <div className="game-row" style={{ borderBottom: 'none', marginBottom: g.trash_talk ? 6 : 0, paddingBottom: 0 }}>
+                <div className="game-row" style={{ borderBottom: 'none', marginBottom: 4, paddingBottom: 0 }}>
                   <div className={`game-team${t1win ? ' winner' : ''}`}>{t1p1} & {t1p2}</div>
                   <div className="game-score-block">
+                    {g.is_tournament && <span style={{ fontSize: 10, background: 'rgba(232,197,71,0.15)', color: 'var(--accent)', padding: '1px 5px', borderRadius: 3, marginRight: 4 }}>T</span>}
                     <span className={`badge ${t1win ? 'badge-win' : 'badge-loss'}`}>{g.t1_score}</span>
                     <span style={{ color: 'var(--text3)', fontSize: 11 }}>–</span>
                     <span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span>
@@ -174,9 +180,15 @@ function Leaderboard({ players, games, onRefresh, toast }) {
                     onRefresh();
                   }}>✕</button>
                 </div>
-                {g.trash_talk && (
-                  <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic', paddingLeft: 2 }}>"{g.trash_talk}"</div>
+                {g.mvp_player_ids?.length > 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 3 }}>
+                    ⭐ MVP: {g.mvp_player_ids.map(id => players.find(p => p.id === id)?.name || '?').join(' & ')}
+                  </div>
                 )}
+                {g.trash_talk && (
+                  <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic', paddingLeft: 2, marginBottom: 4 }}>"{g.trash_talk}"</div>
+                )}
+                <button className="btn btn-sm" onClick={() => onGrudgeMatch && onGrudgeMatch(g)} style={{ fontSize: 11, marginTop: 2 }}>🔄 Rematch</button>
               </div>
             );
           })}
@@ -242,7 +254,7 @@ function calcScores(rounds) {
   return { t1, t2 };
 }
 
-function LogGame({ players, onGameLogged, toast }) {
+function LogGame({ players, onGameLogged, toast, grudgeMatch, onGrudgeMatchUsed }) {
   const [t1p1, setT1p1] = useState('');
   const [t1p2, setT1p2] = useState('');
   const [t2p1, setT2p1] = useState('');
@@ -254,13 +266,19 @@ function LogGame({ players, onGameLogged, toast }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (players.length >= 4) {
+    if (grudgeMatch) {
+      setT1p1(grudgeMatch.t1_p1 || '');
+      setT1p2(grudgeMatch.t1_p2 || '');
+      setT2p1(grudgeMatch.t2_p1 || '');
+      setT2p2(grudgeMatch.t2_p2 || '');
+      onGrudgeMatchUsed && onGrudgeMatchUsed();
+    } else if (players.length >= 4) {
       setT1p1(players[0].id); setT1p2(players[1].id);
       setT2p1(players[2].id); setT2p2(players[3].id);
     } else if (players.length >= 2) {
       setT1p1(players[0].id); setT1p2(players[1].id);
     }
-  }, [players]);
+  }, [players, grudgeMatch]);
 
   const playerOptions = players.map(p => <option key={p.id} value={p.id}>{p.name}</option>);
   const getName = id => players.find(p => p.id === id)?.name || '?';
@@ -618,7 +636,7 @@ function HeadToHead({ players, games }) {
 // ---- HELPERS ----
 function buildStats(players, games) {
   const stats = {};
-  players.forEach(p => { stats[p.id] = { wins: 0, losses: 0, pts: 0, hole: 0, board: 0 }; });
+  players.forEach(p => { stats[p.id] = { wins: 0, losses: 0, pts: 0, hole: 0, board: 0, mvps: 0 }; });
   games.forEach(g => {
     const t1win = g.t1_score > g.t2_score;
     const playerBags = {
@@ -638,118 +656,17 @@ function buildStats(players, games) {
         stats[pid].board += playerBags[pid]?.board || 0;
       });
     });
+    if (g.mvp_player_ids) {
+      g.mvp_player_ids.forEach(pid => {
+        if (stats[pid]) stats[pid].mvps++;
+      });
+    }
   });
   return stats;
 }
 
-// ---- MASTER CORNHOLER ----
-function MasterCornholer({ players, games }) {
-  // Get start of current week (Monday)
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun, 1=Mon...
-  const diffToMonday = (day === 0 ? -6 : 1 - day);
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() + diffToMonday);
-  weekStart.setHours(0, 0, 0, 0);
 
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-
-  const weekGames = games.filter(g => {
-    const d = new Date(g.played_at);
-    return d >= weekStart && d <= weekEnd;
-  });
-
-  const stats = buildStats(players, weekGames);
-  const qualified = players.filter(p => (stats[p.id]?.wins || 0) + (stats[p.id]?.losses || 0) > 0);
-  const sorted = [...qualified].sort((a, b) => {
-    const sa = stats[a.id]; const sb = stats[b.id];
-    const wa = sa.wins / (sa.wins + sa.losses); const wb = sb.wins / (sb.wins + sb.losses);
-    if (wb !== wa) return wb - wa;
-    return sb.wins - sa.wins;
-  });
-
-  const leader = sorted[0];
-  const leaderStats = leader ? stats[leader.id] : null;
-  const leaderIndex = leader ? players.indexOf(leader) : 0;
-  const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-
-  return (
-    <div>
-      <div className="card" style={{ textAlign: 'center', padding: '2rem 1.25rem' }}>
-        <div style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8 }}>Week of {weekLabel}</div>
-        {!leader ? (
-          <div className="empty" style={{ padding: '1.5rem 0' }}>No games played this week yet.</div>
-        ) : (
-          <>
-            <div style={{ fontSize: 48, marginBottom: 8 }}>🏆</div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '1px', color: 'var(--text3)', marginBottom: 4 }}>Master Cornholer</div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 48, color: 'var(--accent)', lineHeight: 1, marginBottom: 16 }}>{leader.name}</div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div className="stat-box" style={{ minWidth: 90 }}>
-                <div className="stat-box-label">Wins</div>
-                <div className="stat-box-val" style={{ color: 'var(--green)' }}>{leaderStats.wins}</div>
-              </div>
-              <div className="stat-box" style={{ minWidth: 90 }}>
-                <div className="stat-box-label">Losses</div>
-                <div className="stat-box-val" style={{ color: 'var(--red)' }}>{leaderStats.losses}</div>
-              </div>
-              <div className="stat-box" style={{ minWidth: 90 }}>
-                <div className="stat-box-label">Win %</div>
-                <div className="stat-box-val">{Math.round(leaderStats.wins / (leaderStats.wins + leaderStats.losses) * 100)}%</div>
-              </div>
-              <div className="stat-box" style={{ minWidth: 90 }}>
-                <div className="stat-box-label">Hole</div>
-                <div className="stat-box-val">{leaderStats.hole}</div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {sorted.length > 1 && (
-        <div className="card">
-          <div className="card-title">This Week's Rankings</div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Hole</th><th>Board</th></tr>
-              </thead>
-              <tbody>
-                {sorted.map((p, i) => {
-                  const s = stats[p.id];
-                  const pct = Math.round(s.wins / (s.wins + s.losses) * 100);
-                  return (
-                    <tr key={p.id}>
-                      <td><span className={`rank-num${i === 0 ? ' gold' : ''}`}>{i + 1}</span></td>
-                      <td>
-                        <div className="player-row">
-                          <Avatar name={p.name} index={players.indexOf(p)} />
-                          <span style={{ fontWeight: 500 }}>{p.name}</span>
-                        </div>
-                      </td>
-                      <td><span className="badge badge-win">{s.wins}</span></td>
-                      <td><span className="badge badge-loss">{s.losses}</span></td>
-                      <td style={{ color: 'var(--text2)' }}>{pct}%</td>
-                      <td style={{ color: 'var(--text2)' }}>{s.hole}</td>
-                      <td style={{ color: 'var(--text2)' }}>{s.board}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 12 }}>
-            {weekGames.length} game{weekGames.length !== 1 ? 's' : ''} played this week. Resets every Monday.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Master'];
+const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Tournament', 'Master'];
 
 export default function App() {
   const [tab, setTab] = useState('Leaderboard');
@@ -758,10 +675,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState('');
   const [gameResult, setGameResult] = useState(null);
+  const [specialBanner, setSpecialBanner] = useState(null);
+  const [grudgeMatch, setGrudgeMatch] = useState(null);
   const latestGameId = useRef(null);
 
   const isConfigured = process.env.REACT_APP_SUPABASE_URL && process.env.REACT_APP_SUPABASE_ANON_KEY
     && process.env.REACT_APP_SUPABASE_URL !== 'YOUR_SUPABASE_URL';
+
+  // Initialize OneSignal
+  useEffect(() => {
+    OneSignalManager.initialize();
+  }, []);
 
   const showToast = useCallback((msg) => {
     setToastMsg(msg);
@@ -791,6 +715,12 @@ export default function App() {
       (ps || []).forEach(p => { playerMap[p.id] = p.name; });
       const getName = id => playerMap[id] || '?';
 
+      // Calculate and save MVP
+      const mvpIds = calculateMVP(game);
+      if (mvpIds.length > 0) {
+        await supabase.from('games').update({ mvp_player_ids: mvpIds }).eq('id', game.id);
+      }
+
       const t1wins = game.t1_score > game.t2_score;
       const winners = t1wins ? `${getName(game.t1_p1)} & ${getName(game.t1_p2)}` : `${getName(game.t2_p1)} & ${getName(game.t2_p2)}`;
       const losers = t1wins ? `${getName(game.t2_p1)} & ${getName(game.t2_p2)}` : `${getName(game.t1_p1)} & ${getName(game.t1_p2)}`;
@@ -798,6 +728,8 @@ export default function App() {
       const loseScore = t1wins ? game.t2_score : game.t1_score;
       const margin = winScore - loseScore;
 
+      // Check special events
+      const isShutout = loseScore === 0;
       const t1hole = (game.t1_p1_hole||0) + (game.t1_p2_hole||0);
       const t1board = (game.t1_p1_board||0) + (game.t1_p2_board||0);
       const t2hole = (game.t2_p1_hole||0) + (game.t2_p2_hole||0);
@@ -808,6 +740,12 @@ export default function App() {
       const loseHole = t1wins ? t2hole : t1hole;
       const winBoard = t1wins ? t1board : t2board;
       const loseBoard = t1wins ? t2board : t1board;
+
+      // Special event banners
+      if (isShutout) {
+        setSpecialBanner({ emoji: '💀', title: 'SHUTOUT', message: `${losers} got absolutely zero points. Someone check on them.` });
+        await OneSignalManager.notifyShutout(losers);
+      }
 
       const isBlowout = margin >= 9;
       const isClose = margin <= 2;
@@ -826,6 +764,10 @@ export default function App() {
       else if (isClose) context = 'Extremely close game, came down to the wire. Make it sound like the most dramatic moment in sports history.';
       else context = `Solid win for ${winners}. Be cocky about the winners and throw mild shade at the losers.`;
 
+      // Random style for variety
+      const styles = ['sports commentator', 'disappointed coach', 'deadpan reporter', 'soap opera narrator', 'shocked witness', 'hype man', 'reality TV host', 'retired athlete analyst', 'movie trailer voice', 'tabloid journalist'];
+      const style = styles[Math.floor(Math.random() * styles.length)];
+
       setGameResult(`${winners} beat ${losers} ${winScore}–${loseScore}...`);
 
       try {
@@ -840,25 +782,28 @@ export default function App() {
           },
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
-            max_tokens: 120,
+            max_tokens: 150,
+            temperature: 1.0,
             messages: [{
               role: 'user',
-              content: `You are a trash-talking sports announcer for a work cornhole league. Write ONE short notification (1-2 sentences, no quotes, no emojis) about this game. Be funny, savage, and use their actual names. DO NOT just state the score.
+              content: `You are the meanest, funniest trash-talking sports announcer in history. You work for a cornhole league at someone's job. Write ONE brutal notification (1-2 sentences, no quotes, no emojis) about this game. Use their actual names. Write in the style of a ${style}. Be creative, unpredictable, and savage — never generic. Never use these words: dominated, crushed, obliterated, destroyed, demolished, stellar, impressive, came out on top, secured the win, battle it out, faced off, at the end of the day.
 
 Winners: ${winners} (score: ${winScore}, holes: ${winHole}, on board: ${winBoard})
 Losers: ${losers} (score: ${loseScore}, holes: ${loseHole}, on board: ${loseBoard})
 Total bags thrown: ${totalBags}, total holes: ${totalHole}
 
-Tone: ${context}`
+Tone: ${context}
+
+Be unpredictable. Make it feel like a different person wrote it every time.`
             }]
           })
         });
         const data = await res.json();
-        console.log('API response:', JSON.stringify(data));
         const msg = data.content?.[0]?.text;
         if (msg) {
           setGameResult(msg);
           await supabase.from('games').update({ trash_talk: msg }).eq('id', game.id);
+          await OneSignalManager.notifyGameResult(winners, losers, winScore, loseScore, msg);
           await fetchData();
         }
       } catch(e) {
@@ -905,15 +850,32 @@ Tone: ${context}`
       <main className="main">
         {loading ? <Loading /> : (
           <>
-            {tab === 'Leaderboard' && <Leaderboard players={players} games={games} onRefresh={fetchData} toast={showToast} />}
-            {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} />}
+            {tab === 'Leaderboard' && <Leaderboard players={players} games={games} onRefresh={fetchData} toast={showToast} onGrudgeMatch={(g) => { setGrudgeMatch(g); setTab('Log Game'); }} />}
+            {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} grudgeMatch={grudgeMatch} onGrudgeMatchUsed={() => setGrudgeMatch(null)} />}
             {tab === 'Players' && <Players players={players} onRefresh={fetchData} toast={showToast} />}
             {tab === 'H2H' && <HeadToHead players={players} games={games} />}
-            {tab === 'Master' && <MasterCornholer players={players} games={games} />}
+            {tab === 'Tournament' && <Tournament players={players} games={games} toast={showToast} />}
+            {tab === 'Master' && <MasterCornholerTab players={players} games={games} />}
           </>
         )}
       </main>
       <Toast message={toastMsg} />
+      {specialBanner && (
+        <div style={{
+          position: 'fixed', top: '1rem', left: '1rem', right: '1rem',
+          background: 'var(--surface)', border: '1px solid var(--accent)',
+          borderRadius: 'var(--radius)', padding: '12px 16px',
+          zIndex: 9998, boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', gap: 10
+        }}>
+          <span style={{ fontSize: 24 }}>{specialBanner.emoji}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500 }}>{specialBanner.title}</div>
+            <div style={{ fontSize: 13, color: 'var(--text)' }}>{specialBanner.message}</div>
+          </div>
+          <button onClick={() => setSpecialBanner(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
       <GameResultBanner result={gameResult} onDismiss={() => setGameResult(null)} />
     </>
   );
