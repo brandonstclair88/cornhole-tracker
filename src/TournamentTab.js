@@ -1,420 +1,425 @@
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
+import { OneSignalManager } from './OneSignalManager';
+import {
+  getCurrentSession, minutesUntilLock, formatCountdown,
+  getWeekStart, generateTeams, isWeekday
+} from './tournamentUtils';
 
-// Get the current week's Monday
-export function getWeekStart(date = new Date()) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
+const AVATAR_COLORS = [
+  { bg: '#2a2318', fg: '#e8c547' }, { bg: '#1a2820', fg: '#4caf82' },
+  { bg: '#251818', fg: '#e05c5c' }, { bg: '#1a2030', fg: '#6ba3e0' },
+  { bg: '#221a28', fg: '#b07ee0' }, { bg: '#1f2018', fg: '#8ec44a' },
+];
 
-export function getWeekEnd(weekStart) {
-  const d = new Date(weekStart);
-  d.setDate(d.getDate() + 6);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-// Check if today is a weekday (Mon-Thu)
-export function isWeekday(date = new Date()) {
-  const day = date.getDay();
-  return day >= 1 && day <= 4;
-}
-
-// Get current session info
-export function getCurrentSession(now = new Date()) {
-  if (!isWeekday(now)) return null;
-
-  const hour = now.getHours();
-  const minute = now.getMinutes();
-  const totalMinutes = hour * 60 + minute;
-
-  const morningOpen = 6 * 60;       // 6:00am
-  const morningLock = 10 * 60;      // 10:00am
-  const afternoonOpen = 10 * 60 + 15; // 10:15am
-  const afternoonLock = 15 * 60;    // 3:00pm
-
-  if (totalMinutes >= morningOpen && totalMinutes < morningLock) {
-    return { type: 'morning', opensAt: morningOpen, locksAt: morningLock, status: 'open' };
-  }
-  if (totalMinutes >= morningLock && totalMinutes < morningLock + 5) {
-    return { type: 'morning', opensAt: morningOpen, locksAt: morningLock, status: 'locking' };
-  }
-  if (totalMinutes >= afternoonOpen && totalMinutes < afternoonLock) {
-    return { type: 'afternoon', opensAt: afternoonOpen, locksAt: afternoonLock, status: 'open' };
-  }
-  if (totalMinutes >= afternoonLock && totalMinutes < afternoonLock + 5) {
-    return { type: 'afternoon', opensAt: afternoonOpen, locksAt: afternoonLock, status: 'locking' };
-  }
-
-  // Find next session
-  if (totalMinutes < morningOpen) {
-    return { type: 'morning', locksAt: morningLock, status: 'upcoming', minutesUntilOpen: morningOpen - totalMinutes };
-  }
-  if (totalMinutes >= morningLock && totalMinutes < afternoonOpen) {
-    return { type: 'afternoon', locksAt: afternoonLock, status: 'upcoming', minutesUntilOpen: afternoonOpen - totalMinutes };
-  }
-  return { status: 'done' }; // both sessions done for today
-}
-
-// Get minutes until lock
-export function minutesUntilLock(session, now = new Date()) {
-  if (!session) return null;
-  const totalMinutes = now.getHours() * 60 + now.getMinutes();
-  return session.locksAt - totalMinutes;
-}
-
-// Format countdown
-export function formatCountdown(minutes) {
-  if (minutes <= 0) return 'Now';
-  if (minutes < 60) return `${minutes}m`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-// Build player stats for balancing
-export function buildPlayerStats(players, games) {
-  const stats = {};
-  players.forEach(p => {
-    stats[p.id] = { wins: 0, losses: 0, pts: 0, hole: 0, board: 0, mvps: 0 };
-  });
-  games.forEach(g => {
-    const t1win = g.t1_score > g.t2_score;
-    [[g.t1_p1, g.t1_p2], [g.t2_p1, g.t2_p2]].forEach((team, ti) => {
-      const isT1 = ti === 0;
-      const won = isT1 ? t1win : !t1win;
-      team.forEach(pid => {
-        if (!stats[pid]) return;
-        if (won) stats[pid].wins++; else stats[pid].losses++;
-        stats[pid].pts += isT1 ? g.t1_score : g.t2_score;
-      });
-    });
-    if (g.mvp_player_ids) {
-      g.mvp_player_ids.forEach(pid => {
-        if (stats[pid]) stats[pid].mvps++;
-      });
-    }
-  });
-  return stats;
-}
-
-function winPct(s) {
-  const total = s.wins + s.losses;
-  return total > 0 ? s.wins / total : 0;
-}
-
-// Get sessions played this week per player
-export async function getWeeklySessionCounts(weekStart) {
-  const weekEnd = getWeekEnd(weekStart);
-  const { data: sessions } = await supabase
-    .from('tournament_sessions')
-    .select('id, session_date, status')
-    .gte('session_date', weekStart.toISOString().split('T')[0])
-    .lte('session_date', weekEnd.toISOString().split('T')[0])
-    .eq('status', 'completed');
-
-  if (!sessions?.length) return {};
-
-  const { data: checkins } = await supabase
-    .from('tournament_checkins')
-    .select('player_id, session_id')
-    .in('session_id', sessions.map(s => s.id));
-
-  const counts = {};
-  (checkins || []).forEach(c => {
-    counts[c.player_id] = (counts[c.player_id] || 0) + 1;
-  });
-  return counts;
-}
-
-// Get all-time session counts per player
-export async function getAllTimeSessionCounts() {
-  const { data: checkins } = await supabase
-    .from('tournament_checkins')
-    .select('player_id');
-
-  const counts = {};
-  (checkins || []).forEach(c => {
-    counts[c.player_id] = (counts[c.player_id] || 0) + 1;
-  });
-  return counts;
-}
-
-// Get teammate history this week
-export async function getWeeklyTeammates(weekStart) {
-  const weekEnd = getWeekEnd(weekStart);
-  const { data: sessions } = await supabase
-    .from('tournament_sessions')
-    .select('*')
-    .gte('session_date', weekStart.toISOString().split('T')[0])
-    .lte('session_date', weekEnd.toISOString().split('T')[0])
-    .eq('status', 'completed');
-
-  const pairs = {};
-  (sessions || []).forEach(s => {
-    const addPair = (a, b) => {
-      if (!a || !b) return;
-      const key = [a, b].sort().join('-');
-      pairs[key] = (pairs[key] || 0) + 1;
-    };
-    addPair(s.team1_p1, s.team1_p2);
-    addPair(s.team2_p1, s.team2_p2);
-  });
-  return pairs;
-}
-
-// Get bye history this week
-export async function getWeeklyByes(weekStart) {
-  const weekEnd = getWeekEnd(weekStart);
-  const { data: sessions } = await supabase
-    .from('tournament_sessions')
-    .select('bye_player')
-    .gte('session_date', weekStart.toISOString().split('T')[0])
-    .lte('session_date', weekEnd.toISOString().split('T')[0])
-    .not('bye_player', 'is', null);
-
-  const byes = {};
-  (sessions || []).forEach(s => {
-    if (s.bye_player) byes[s.bye_player] = (byes[s.bye_player] || 0) + 1;
-  });
-  return byes;
-}
-
-// Main team balancing algorithm
-export async function generateTeams(checkedInPlayers, allPlayers, allGames, weekStart) {
-  if (checkedInPlayers.length < 4) return null;
-
-  const stats = buildPlayerStats(allPlayers, allGames);
-  const weeklyCounts = await getWeeklySessionCounts(weekStart);
-  const allTimeCounts = await getAllTimeSessionCounts();
-  const weeklyTeammates = await getWeeklyTeammates(weekStart);
-  const weeklyByes = await getWeeklyByes(weekStart);
-
-  // Sort by win %
-  const sorted = [...checkedInPlayers].sort((a, b) => winPct(stats[b.id] || {}) - winPct(stats[a.id] || {}));
-
-  let players4 = sorted.slice(0, 4);
-  let byePlayer = null;
-
-  if (checkedInPlayers.length === 5) {
-    // Pick bye: most sessions this week, tiebreak all-time, slight nudge for historically less active
-    const byeCandidate = sorted.reduce((worst, p) => {
-      const weeklyW = weeklyCounts[p.id] || 0;
-      const weeklyWorst = weeklyCounts[worst.id] || 0;
-      if (weeklyW > weeklyWorst) return p;
-      if (weeklyW === weeklyWorst) {
-        const atW = allTimeCounts[p.id] || 0;
-        const atWorst = allTimeCounts[worst.id] || 0;
-        return atW > atWorst ? p : worst;
-      }
-      return worst;
-    });
-
-    // But protect historically less active players
-    const hasGuaranteedBye = Object.entries(weeklyByes).find(([pid]) =>
-      checkedInPlayers.find(p => p.id === pid) && weeklyByes[pid] === 0
-    );
-
-    byePlayer = hasGuaranteedBye
-      ? checkedInPlayers.find(p => p.id === hasGuaranteedBye[0])
-      : byeCandidate;
-
-    players4 = sorted.filter(p => p.id !== byePlayer.id).slice(0, 4);
-  }
-
-  // Top 2 players always split
-  const top2 = players4.slice(0, 2);
-  const rest = players4.slice(2);
-
-  // Try all combinations to minimize skill difference and avoid repeat teammates
-  let bestTeams = null;
-  let bestScore = Infinity;
-
-  const combos = [
-    [[top2[0], rest[0]], [top2[1], rest[1]]],
-    [[top2[0], rest[1]], [top2[1], rest[0]]],
-  ];
-
-  combos.forEach(([t1, t2]) => {
-    const t1skill = (winPct(stats[t1[0].id] || {}) + winPct(stats[t1[1].id] || {})) / 2;
-    const t2skill = (winPct(stats[t2[0].id] || {}) + winPct(stats[t2[1].id] || {})) / 2;
-    const skillDiff = Math.abs(t1skill - t2skill);
-
-    // Penalize repeated teammates
-    const t1key = [t1[0].id, t1[1].id].sort().join('-');
-    const t2key = [t2[0].id, t2[1].id].sort().join('-');
-    const repeatPenalty = ((weeklyTeammates[t1key] || 0) + (weeklyTeammates[t2key] || 0)) * 0.5;
-
-    const score = skillDiff + repeatPenalty;
-    if (score < bestScore) {
-      bestScore = score;
-      bestTeams = { t1, t2 };
-    }
-  });
-
-  return { team1: bestTeams.t1, team2: bestTeams.t2, byePlayer };
-}
-
-// Calculate MVP for a game
-export function calculateMVP(game) {
-  const players = [
-    { id: game.t1_p1, score: (game.t1_p1_hole || 0) * 3 + (game.t1_p1_board || 0) },
-    { id: game.t1_p2, score: (game.t1_p2_hole || 0) * 3 + (game.t1_p2_board || 0) },
-    { id: game.t2_p1, score: (game.t2_p1_hole || 0) * 3 + (game.t2_p1_board || 0) },
-    { id: game.t2_p2, score: (game.t2_p2_hole || 0) * 3 + (game.t2_p2_board || 0) },
-  ].filter(p => p.id);
-
-  if (players.every(p => p.score === 0)) return [];
-
-  const max = Math.max(...players.map(p => p.score));
-  return players.filter(p => p.score === max).map(p => p.id);
-}
-
-// Check for special game events
-export function checkSpecialEvents(game) {
-  const events = [];
-  if (game.t2_score === 0 || game.t1_score === 0) events.push('shutout');
-
-  const losingScore = Math.min(game.t1_score, game.t2_score);
-  const winningScore = Math.max(game.t1_score, game.t2_score);
-  // We'd need round-by-round data to detect comebacks properly
-  // For now flag based on margin + score pattern
-
-  return events;
-}
-
-// Get weekly stats for awards
-export async function getWeeklyStats(weekStart, players, games) {
-  const weekEnd = getWeekEnd(weekStart);
-  const weekGames = games.filter(g => {
-    const d = new Date(g.played_at);
-    return d >= weekStart && d <= weekEnd;
-  });
-
-  const { data: sessions } = await supabase
-    .from('tournament_sessions')
-    .select('*, tournament_checkins(*)')
-    .gte('session_date', weekStart.toISOString().split('T')[0])
-    .lte('session_date', weekEnd.toISOString().split('T')[0]);
-
-  // Count sessions each player was checked in for
-  const checkinCounts = {};
-  const playedCounts = {};
-  (sessions || []).forEach(s => {
-    (s.tournament_checkins || []).forEach(c => {
-      checkinCounts[c.player_id] = (checkinCounts[c.player_id] || 0) + 1;
-    });
-    if (s.status === 'completed') {
-      [s.team1_p1, s.team1_p2, s.team2_p1, s.team2_p2].forEach(pid => {
-        if (pid) playedCounts[pid] = (playedCounts[pid] || 0) + 1;
-      });
-    }
-  });
-
-  const stats = {};
-  players.forEach(p => {
-    const checkedIn = checkinCounts[p.id] || 0;
-    const played = playedCounts[p.id] || 0;
-    const eligible = checkedIn > 0 && played >= checkedIn * 0.5;
-    stats[p.id] = {
-      wins: 0, losses: 0, pts: 0, hole: 0, board: 0, mvps: 0,
-      checkedIn, played, eligible,
-      maxLossMargin: 0, closelosses: 0,
-      bestHoleGame: 0,
-    };
-  });
-
-  weekGames.forEach(g => {
-    const t1win = g.t1_score > g.t2_score;
-    [[g.t1_p1, g.t1_p2], [g.t2_p1, g.t2_p2]].forEach((team, ti) => {
-      const isT1 = ti === 0;
-      const won = isT1 ? t1win : !t1win;
-      const score = isT1 ? g.t1_score : g.t2_score;
-      const oppScore = isT1 ? g.t2_score : g.t1_score;
-      const margin = Math.abs(g.t1_score - g.t2_score);
-      team.forEach(pid => {
-        if (!stats[pid]) return;
-        if (won) stats[pid].wins++; else {
-          stats[pid].losses++;
-          if (margin <= 2) stats[pid].closelosses++;
-        }
-        stats[pid].pts += score;
-      });
-    });
-
-    const playerHoles = {
-      [g.t1_p1]: (g.t1_p1_hole || 0),
-      [g.t1_p2]: (g.t1_p2_hole || 0),
-      [g.t2_p1]: (g.t2_p1_hole || 0),
-      [g.t2_p2]: (g.t2_p2_hole || 0),
-    };
-    const playerBoards = {
-      [g.t1_p1]: (g.t1_p1_board || 0),
-      [g.t1_p2]: (g.t1_p2_board || 0),
-      [g.t2_p1]: (g.t2_p1_board || 0),
-      [g.t2_p2]: (g.t2_p2_board || 0),
-    };
-
-    Object.keys(playerHoles).forEach(pid => {
-      if (!stats[pid]) return;
-      stats[pid].hole += playerHoles[pid];
-      stats[pid].board += playerBoards[pid];
-      if (playerHoles[pid] > stats[pid].bestHoleGame) stats[pid].bestHoleGame = playerHoles[pid];
-    });
-
-    if (g.mvp_player_ids) {
-      g.mvp_player_ids.forEach(pid => {
-        if (stats[pid]) stats[pid].mvps++;
-      });
-    }
-  });
-
-  return stats;
-}
-
-// Determine weekly award winners
-export function determineAwardWinners(weeklyStats, players) {
-  const eligible = players.filter(p => weeklyStats[p.id]?.eligible);
-  const anyone = players.filter(p => (weeklyStats[p.id]?.wins + weeklyStats[p.id]?.losses) > 0);
-
-  function bestBy(pool, ...comparators) {
-    if (!pool.length) return null;
-    return pool.reduce((best, p) => {
-      for (const fn of comparators) {
-        const diff = fn(p) - fn(best);
-        if (diff > 0) return p;
-        if (diff < 0) return best;
-      }
-      return best;
-    });
-  }
-
-  const winPctFn = p => {
-    const s = weeklyStats[p.id];
-    const t = s.wins + s.losses;
-    return t > 0 ? s.wins / t : 0;
-  };
-
-  const master = bestBy(eligible, winPctFn, p => weeklyStats[p.id].pts, p => weeklyStats[p.id].mvps);
-  const clown = eligible.length ? bestBy(eligible,
-    p => -winPctFn(p), p => -weeklyStats[p.id].pts, p => -weeklyStats[p.id].mvps
-  ) : null;
-
-  const bagWhisperer = bestBy(anyone, p => weeklyStats[p.id].bestHoleGame);
-  const boardHugger = bestBy(anyone,
-    p => weeklyStats[p.id].board,
-    p => -weeklyStats[p.id].hole
+function Avatar({ name, index, size = 28 }) {
+  const c = AVATAR_COLORS[(index || 0) % AVATAR_COLORS.length];
+  const initials = (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  return (
+    <div style={{ width: size, height: size, minWidth: size, borderRadius: '50%', background: c.bg, color: c.fg, fontSize: size * 0.38, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>
+      {initials}
+    </div>
   );
-  const onFire = bestBy(anyone, p => weeklyStats[p.id].wins);
-  const iceCold = bestBy(anyone, p => weeklyStats[p.id].losses);
-  const soClose = bestBy(anyone, p => weeklyStats[p.id].closelosses);
+}
 
-  return { master, clown, bagWhisperer, boardHugger, onFire, iceCold, soClose };
+async function generateAIPreview(team1, team2, playerMap, games) {
+  try {
+    const t1names = `${playerMap[team1[0]?.id] || '?'} & ${playerMap[team1[1]?.id] || '?'}`;
+    const t2names = `${playerMap[team2[0]?.id] || '?'} & ${playerMap[team2[1]?.id] || '?'}`;
+    const h2h = games.filter(g => {
+      const all = [g.t1_p1, g.t1_p2, g.t2_p1, g.t2_p2];
+      return team1.concat(team2).every(p => all.includes(p?.id));
+    });
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.REACT_APP_ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 100,
+        temperature: 1.0,
+        messages: [{
+          role: 'user',
+          content: `You're a hype announcer for a work cornhole tournament. Write a short (1-2 sentence) pre-game trash talk announcement for this matchup. Use their names. Be funny and savage. No quotes, no emojis.\n\nTeam 1: ${t1names}\nTeam 2: ${t2names}\nPrevious matchups: ${h2h.length}\n\nBe unpredictable and creative.`
+        }]
+      })
+    });
+    const data = await res.json();
+    return data.content?.[0]?.text || `${t1names} vs ${t2names} — let's go!`;
+  } catch (e) {
+    return null;
+  }
 }
 
 export default function TournamentTab({ players, games, toast }) {
-  return <div style={{padding:'2rem',color:'var(--text2)',textAlign:'center'}}>Tournament tab loading... refresh if this persists.</div>;
+  const [session, setSession] = useState(null);
+  const [dbSession, setDbSession] = useState(null);
+  const [checkins, setCheckins] = useState([]);
+  const [myPlayerId, setMyPlayerId] = useState(localStorage.getItem('myPlayerId') || '');
+  const [loading, setLoading] = useState(true);
+  const [locking, setLocking] = useState(false);
+  const [weeklyStandings, setWeeklyStandings] = useState({});
+  const [bagForecast, setBagForecast] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [countdown, setCountdown] = useState('');
+
+  const weekStart = getWeekStart();
+
+  const fetchSessionData = useCallback(async () => {
+    const now = new Date();
+    const currentSession = getCurrentSession(now);
+    setSession(currentSession);
+
+    if (!currentSession || currentSession.status === 'done') {
+      setLoading(false);
+      return;
+    }
+
+    const today = now.toISOString().split('T')[0];
+    const { data: sessions } = await supabase
+      .from('tournament_sessions')
+      .select('*')
+      .eq('session_date', today)
+      .eq('session_type', currentSession.type)
+      .limit(1);
+
+    const existing = sessions?.[0];
+    setDbSession(existing || null);
+
+    if (existing) {
+      const { data: ci } = await supabase
+        .from('tournament_checkins')
+        .select('*, players(*)')
+        .eq('session_id', existing.id);
+      setCheckins(ci || []);
+    } else {
+      setCheckins([]);
+    }
+
+    // Weekly standings from tournament games
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const standings = {};
+    players.forEach(p => { standings[p.id] = { wins: 0, losses: 0 }; });
+    const weekTourneyGames = games.filter(g => g.is_tournament &&
+      new Date(g.played_at) >= weekStart && new Date(g.played_at) <= weekEnd
+    );
+    weekTourneyGames.forEach(g => {
+      const t1win = g.t1_score > g.t2_score;
+      [[g.t1_p1, g.t1_p2], [g.t2_p1, g.t2_p2]].forEach((team, ti) => {
+        team.forEach(pid => {
+          if (!standings[pid]) return;
+          if (ti === 0 ? t1win : !t1win) standings[pid].wins++;
+          else standings[pid].losses++;
+        });
+      });
+    });
+    setWeeklyStandings(standings);
+    setLoading(false);
+  }, [players, games, weekStart]);
+
+  useEffect(() => {
+    fetchSessionData();
+    const interval = setInterval(() => {
+      const now = new Date();
+      const cur = getCurrentSession(now);
+      setSession(cur);
+      const minsLeft = cur ? minutesUntilLock(cur, now) : null;
+      if (minsLeft !== null) setCountdown(formatCountdown(minsLeft));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchSessionData]);
+
+  useEffect(() => {
+    if (!session) return;
+    const now = new Date();
+    const minsLeft = minutesUntilLock(session, now);
+    if (minsLeft !== null) setCountdown(formatCountdown(minsLeft));
+  }, [session]);
+
+  useEffect(() => {
+    if (!dbSession) return;
+    const sub = supabase.channel('checkins-' + dbSession.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_checkins', filter: `session_id=eq.${dbSession.id}` }, fetchSessionData)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [dbSession, fetchSessionData]);
+
+  async function ensureSession() {
+    if (dbSession) return dbSession;
+    const now = new Date();
+    const cur = getCurrentSession(now);
+    if (!cur) return null;
+    const locksAt = new Date();
+    locksAt.setHours(Math.floor(cur.locksAt / 60), cur.locksAt % 60, 0, 0);
+    const opensAt = new Date();
+    opensAt.setHours(Math.floor(cur.opensAt / 60), cur.opensAt % 60, 0, 0);
+    const { data, error } = await supabase.from('tournament_sessions').insert({
+      session_type: cur.type,
+      session_date: now.toISOString().split('T')[0],
+      opens_at: opensAt.toISOString(),
+      locks_at: locksAt.toISOString(),
+      status: 'open',
+    }).select().single();
+    if (!error) { setDbSession(data); return data; }
+    return null;
+  }
+
+  async function handleCheckin() {
+    if (!myPlayerId) { toast('Select your player first'); return; }
+    const s = await ensureSession();
+    if (!s) return;
+    const alreadyIn = checkins.find(c => c.player_id === myPlayerId);
+    if (alreadyIn) {
+      await supabase.from('tournament_checkins').delete().eq('id', alreadyIn.id);
+      toast("You're out!");
+    } else {
+      await supabase.from('tournament_checkins').insert({ session_id: s.id, player_id: myPlayerId });
+      toast("You're in! 🎯");
+    }
+    fetchSessionData();
+  }
+
+  async function lockSession() {
+    if (!dbSession) return;
+    if (checkins.length < 4) {
+      toast('Not enough players — session will cancel in 5 minutes');
+      setTimeout(async () => {
+        const { data: fresh } = await supabase.from('tournament_checkins').select('*').eq('session_id', dbSession.id);
+        if ((fresh || []).length < 4) {
+          await supabase.from('tournament_sessions').update({ status: 'cancelled' }).eq('id', dbSession.id);
+          await OneSignalManager.notifySessionCancelled(session?.type || 'current');
+          toast('Session cancelled — not enough players');
+          fetchSessionData();
+        }
+      }, 5 * 60 * 1000);
+      return;
+    }
+    setLocking(true);
+    const checkedInPlayers = checkins.map(c => c.players).filter(Boolean);
+    const result = await generateTeams(checkedInPlayers, players, games, weekStart);
+    if (!result) { setLocking(false); toast('Not enough players to generate teams'); return; }
+    const playerMap = {};
+    players.forEach(p => { playerMap[p.id] = p.name; });
+    const t1 = result.team1;
+    const t2 = result.team2;
+    const t1names = `${playerMap[t1[0]?.id]} & ${playerMap[t1[1]?.id]}`;
+    const t2names = `${playerMap[t2[0]?.id]} & ${playerMap[t2[1]?.id]}`;
+    const aiPreview = await generateAIPreview(t1, t2, playerMap, games);
+    await supabase.from('tournament_sessions').update({
+      status: 'locked',
+      team1_p1: t1[0]?.id, team1_p2: t1[1]?.id,
+      team2_p1: t2[0]?.id, team2_p2: t2[1]?.id,
+      bye_player: result.byePlayer?.id || null,
+      ai_preview: aiPreview,
+    }).eq('id', dbSession.id);
+    await OneSignalManager.notifyTeamsAnnounced(t1names, t2names, aiPreview);
+    setLocking(false);
+    fetchSessionData();
+  }
+
+  async function getBagForecast() {
+    if (!dbSession?.team1_p1) { toast('Teams not set yet'); return; }
+    setForecastLoading(true);
+    const playerMap = {};
+    players.forEach(p => { playerMap[p.id] = p.name; });
+    try {
+      const t1names = `${playerMap[dbSession.team1_p1]} & ${playerMap[dbSession.team1_p2]}`;
+      const t2names = `${playerMap[dbSession.team2_p1]} & ${playerMap[dbSession.team2_p2]}`;
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.REACT_APP_ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 120,
+          temperature: 1.0,
+          messages: [{
+            role: 'user',
+            content: `You're a ridiculous fake sports analyst predicting a cornhole game. Be completely absurd and funny. No emojis, no quotes. 2-3 sentences max.\n\nTeam 1: ${t1names}\nTeam 2: ${t2names}\n\nMake up silly fake statistics and ridiculous reasoning. Be different every time.`
+          }]
+        })
+      });
+      const data = await res.json();
+      setBagForecast(data.content?.[0]?.text || 'The bags will fly. Some will land. One team will win.');
+    } catch (e) {
+      setBagForecast('The crystal ball is broken. Just go play.');
+    }
+    setForecastLoading(false);
+  }
+
+  const myCheckin = checkins.find(c => c.player_id === myPlayerId);
+  const isLocked = dbSession?.status === 'locked' || dbSession?.status === 'completed';
+  const getName = id => players.find(p => p.id === id)?.name || '?';
+  const getIndex = id => players.findIndex(p => p.id === id);
+
+  if (loading) return <div style={{ padding: '2rem', color: 'var(--text3)', textAlign: 'center' }}>Loading...</div>;
+
+  return (
+    <div>
+      {!myPlayerId && (
+        <div className="card" style={{ borderColor: 'var(--accent)' }}>
+          <div className="card-title">Who are you?</div>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 10 }}>Select your name to check into sessions.</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {players.map((p, i) => (
+              <button key={p.id} className="btn" onClick={() => { setMyPlayerId(p.id); localStorage.setItem('myPlayerId', p.id); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Avatar name={p.name} index={i} size={20} />{p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {myPlayerId && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <Avatar name={players.find(p => p.id === myPlayerId)?.name} index={getIndex(myPlayerId)} size={24} />
+          <span style={{ fontSize: 13, color: 'var(--text2)' }}>Playing as <strong style={{ color: 'var(--text)' }}>{players.find(p => p.id === myPlayerId)?.name}</strong></span>
+          <button className="btn btn-sm" onClick={() => { setMyPlayerId(''); localStorage.removeItem('myPlayerId'); }} style={{ marginLeft: 'auto' }}>Change</button>
+        </div>
+      )}
+
+      {!isWeekday() ? (
+        <div className="card"><div className="empty">No tournament today — see you Monday! 🎯</div></div>
+      ) : !session || session.status === 'done' ? (
+        <div className="card"><div className="empty">Both sessions done for today. Good hustle! 💪</div></div>
+      ) : (
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <div className="card-title" style={{ marginBottom: 2 }}>
+                {session.type === 'morning' ? '☀️ Morning' : '🌆 Afternoon'} Session
+              </div>
+              {session.status === 'open' && countdown && (
+                <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+                  Locks in <strong style={{ color: 'var(--accent)' }}>{countdown}</strong>
+                </div>
+              )}
+            </div>
+            {session.status === 'open' && !isLocked && myPlayerId && (
+              <button className={`btn ${myCheckin ? '' : 'btn-primary'}`} onClick={handleCheckin}
+                style={myCheckin ? { borderColor: 'var(--green)', color: 'var(--green)' } : {}}>
+                {myCheckin ? "✓ I'm In — Check Out" : "I'm In 🎯"}
+              </button>
+            )}
+          </div>
+
+          {checkins.length > 0 && !isLocked && (
+            <div>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8 }}>Checked in ({checkins.length})</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {checkins.map(c => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface2)', padding: '4px 10px', borderRadius: 99, fontSize: 13 }}>
+                    <Avatar name={c.players?.name} index={getIndex(c.player_id)} size={18} />{c.players?.name}
+                  </div>
+                ))}
+              </div>
+              {checkins.length >= 4 ? (
+                <button className="btn btn-primary" onClick={lockSession} disabled={locking} style={{ width: '100%' }}>
+                  {locking ? 'Generating teams...' : '🔒 Lock & Generate Teams'}
+                </button>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text3)' }}>Need {4 - checkins.length} more player{4 - checkins.length !== 1 ? 's' : ''} to play</div>
+              )}
+            </div>
+          )}
+
+          {isLocked && dbSession && (
+            <div>
+              {dbSession.ai_preview && (
+                <div style={{ fontSize: 13, color: 'var(--text2)', fontStyle: 'italic', marginBottom: 12, padding: '10px', background: 'var(--surface2)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--accent)' }}>
+                  "{dbSession.ai_preview}"
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '12px', border: '1px solid rgba(232,197,71,0.3)' }}>
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', marginBottom: 8 }}>Team 1</div>
+                  {[dbSession.team1_p1, dbSession.team1_p2].map(id => (
+                    <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <Avatar name={getName(id)} index={getIndex(id)} size={22} />
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{getName(id)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--text3)', textAlign: 'center' }}>VS</div>
+                <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: '12px', border: '1px solid rgba(76,175,130,0.3)' }}>
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--green)', marginBottom: 8 }}>Team 2</div>
+                  {[dbSession.team2_p1, dbSession.team2_p2].map(id => (
+                    <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <Avatar name={getName(id)} index={getIndex(id)} size={22} />
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{getName(id)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {dbSession.bye_player && (
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+                  👋 {getName(dbSession.bye_player)} has a bye — guaranteed spot next session
+                </div>
+              )}
+              <button className="btn" onClick={getBagForecast} disabled={forecastLoading} style={{ width: '100%' }}>
+                {forecastLoading ? 'Consulting the oracle...' : '🔮 Bag Forecast'}
+              </button>
+              {bagForecast && (
+                <div style={{ fontSize: 13, color: 'var(--text2)', fontStyle: 'italic', marginTop: 10, padding: '10px', background: 'var(--surface2)', borderRadius: 'var(--radius)' }}>
+                  🔮 {bagForecast}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {Object.keys(weeklyStandings).some(id => weeklyStandings[id].wins + weeklyStandings[id].losses > 0) && (
+        <div className="card">
+          <div className="card-title">This Week's Tournament</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                {['Player','W','L','Win%'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {players
+                .filter(p => weeklyStandings[p.id]?.wins + weeklyStandings[p.id]?.losses > 0)
+                .sort((a, b) => {
+                  const sa = weeklyStandings[a.id]; const sb = weeklyStandings[b.id];
+                  return (sb.wins / (sb.wins + sb.losses || 1)) - (sa.wins / (sa.wins + sa.losses || 1));
+                })
+                .map((p) => {
+                  const s = weeklyStandings[p.id];
+                  const pct = Math.round(s.wins / (s.wins + s.losses) * 100);
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Avatar name={p.name} index={players.indexOf(p)} size={22} />{p.name}
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ background: 'rgba(76,175,130,0.15)', color: 'var(--green)', padding: '2px 7px', borderRadius: 3, fontSize: 12, fontWeight: 600 }}>{s.wins}</span>
+                      </td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ background: 'rgba(224,92,92,0.12)', color: 'var(--red)', padding: '2px 7px', borderRadius: 3, fontSize: 12, fontWeight: 600 }}>{s.losses}</span>
+                      </td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', color: 'var(--text2)' }}>{pct}%</td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
