@@ -3,7 +3,7 @@ import './index.css';
 import { supabase } from './supabase';
 import { OneSignalManager } from './OneSignalManager';
 import { calculateMVP } from './tournamentUtils';
-import Tournament from './Tournament';
+import Tournament from './TournamentTab';
 import MasterCornholerTab from './MasterCornholer';
 
 const AVATAR_COLORS = [
