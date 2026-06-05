@@ -149,12 +149,13 @@ export default function TournamentTab({ players, games, toast }) {
   const [bagForecast, setBagForecast] = useState(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [countdown, setCountdown] = useState('');
+  const [testMode, setTestMode] = useState(false);
 
   const weekStart = getWeekStart();
 
   const fetchSessionData = useCallback(async () => {
     const now = new Date();
-    const currentSession = getCurrentSession(now);
+    const currentSession = testMode ? { type: 'morning', opensAt: 6*60, locksAt: 10*60, status: 'open' } : getCurrentSession(now);
     setSession(currentSession);
 
     if (!currentSession || currentSession.status === 'done') {
@@ -451,9 +452,16 @@ export default function TournamentTab({ players, games, toast }) {
         </div>
       )}
 
-      {!isWeekday() ? (
+      {/* Test mode toggle */}
+      <div style={{ textAlign: 'right', marginBottom: 8 }}>
+        <button className="btn btn-sm" onClick={() => setTestMode(t => !t)} style={{ fontSize: 11, opacity: 0.5 }}>
+          {testMode ? '🧪 Test mode ON' : '🧪 Test'}
+        </button>
+      </div>
+
+      {!testMode && !isWeekday() ? (
         <div className="card"><div className="empty">No tournament today — see you Monday! 🎯</div></div>
-      ) : !session || session.status === 'done' ? (
+      ) : !testMode && (!session || session.status === 'done') ? (
         <div className="card"><div className="empty">Both sessions done for today. Good hustle! 💪</div></div>
       ) : (
         <>
