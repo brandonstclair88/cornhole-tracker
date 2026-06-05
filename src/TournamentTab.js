@@ -153,18 +153,18 @@ export default function TournamentTab({ players, games, toast }) {
 
   const weekStart = getWeekStart();
 
-  const fetchSessionData = useCallback(async () => {
+  const fetchSessionData = useCallback(async (isTestMode = false) => {
     const now = new Date();
-    const currentSession = { type: 'morning', opensAt: 6*60, locksAt: 10*60, status: 'open' };
+    const currentSession = isTestMode ? { type: 'morning', opensAt: 6*60, locksAt: 10*60, status: 'open' } : getCurrentSession(now);
     setSession(currentSession);
 
-    if (!currentSession || currentSession.status === 'done') {
+    if (!isTestMode && (!currentSession || currentSession.status === 'done')) {
       setLoading(false);
       return;
     }
 
     const today = now.toISOString().split('T')[0];
-    const sessionType = testMode ? 'morning' : currentSession.type;
+    const sessionType = isTestMode ? 'morning' : (currentSession?.type || 'morning');
     const { data: sessions } = await supabase
       .from('tournament_sessions')
       .select('*')
@@ -242,11 +242,11 @@ export default function TournamentTab({ players, games, toast }) {
   }, [players, games, weekStart]);
 
   useEffect(() => {
-    fetchSessionData();
-  }, [testMode]);
+    fetchSessionData(testMode);
+  }, [testMode, fetchSessionData]);
 
   useEffect(() => {
-    fetchSessionData();
+    fetchSessionData(testMode);
     const interval = setInterval(() => {
       const now = new Date();
       const cur = getCurrentSession(now);
