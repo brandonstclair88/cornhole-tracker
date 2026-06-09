@@ -27,7 +27,7 @@ function getSessionWindow() {
   const h = now.getHours();
   const m = now.getMinutes();
   const total = h * 60 + m;
-  if (total >= 360 && total < 600) return { type: 'morning', locksAt: '10:00 AM', minutesLeft: 600 - total };
+  if (total >= 390 && total < 600) return { type: 'morning', locksAt: '10:00 AM', minutesLeft: 600 - total };
   if (total >= 615 && total < 900) return { type: 'afternoon', locksAt: '3:00 PM', minutesLeft: 900 - total };
   return null;
 }
