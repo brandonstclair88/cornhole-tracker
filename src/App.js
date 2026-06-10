@@ -562,11 +562,9 @@ function Players({ players, onRefresh, toast, setPlayers }) {
   async function saveAvatar(playerId, avatarId) {
     const { error } = await supabase.from('players').update({ avatar_id: avatarId }).eq('id', playerId);
     if (error) { toast('Failed to save'); return; }
-    // Immediately update local state so UI reflects change right away
     setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, avatar_id: avatarId } : p));
     setEditingAvatar(null);
     toast('Avatar updated!');
-    onRefresh();
   }
 
   return (
