@@ -5,27 +5,54 @@ import { OneSignalManager } from './OneSignalManager';
 import { calculateMVP } from './tournamentUtils';
 import TournamentTab from './TournamentTab';
 import MasterCornholerTab from './MasterCornholer';
+import GamesTab from './GamesTab';
+import Onboarding from './Onboarding';
+import { AvatarDisplay, AvatarPicker } from './Avatars';
 
-const AVATAR_COLORS = [
-  { bg: '#2a2318', fg: '#e8c547' },
-  { bg: '#1a2820', fg: '#4caf82' },
-  { bg: '#251818', fg: '#e05c5c' },
-  { bg: '#1a2030', fg: '#6ba3e0' },
-  { bg: '#221a28', fg: '#b07ee0' },
-  { bg: '#1f2018', fg: '#8ec44a' },
-];
+// PIN Modal
+function PinModal({ onConfirm, onCancel, title = 'Enter PIN' }) {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
 
-function initials(name) {
-  return (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-}
+  function handleDigit(d) {
+    if (pin.length < 4) {
+      const next = pin + d;
+      setPin(next);
+      if (next.length === 4) {
+        if (next === '4399') { onConfirm(); }
+        else { setError('Wrong PIN'); setPin(''); }
+      }
+    }
+  }
 
-function Avatar({ name, index, size = 28 }) {
-  const c = AVATAR_COLORS[(index || 0) % AVATAR_COLORS.length];
   return (
-    <div className="avatar" style={{ width: size, height: size, minWidth: size, background: c.bg, color: c.fg, fontSize: size * 0.38 }}>
-      {initials(name)}
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem', width: '100%', maxWidth: 300 }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--accent)', marginBottom: 12 }}>{title}</div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 12 }}>
+          {[0,1,2,3].map(i => (
+            <div key={i} style={{ width: 40, height: 48, border: '1px solid var(--border2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'var(--accent)' }}>
+              {pin.length > i ? '●' : ''}
+            </div>
+          ))}
+        </div>
+        {error && <div style={{ color: 'var(--red)', fontSize: 12, textAlign: 'center', marginBottom: 8 }}>{error}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 8 }}>
+          {[1,2,3,4,5,6,7,8,9].map(d => (
+            <button key={d} className="btn" onClick={() => handleDigit(String(d))} style={{ height: 48, fontSize: 20, fontFamily: 'var(--font-display)' }}>{d}</button>
+          ))}
+          <div/>
+          <button className="btn" onClick={() => handleDigit('0')} style={{ height: 48, fontSize: 20, fontFamily: 'var(--font-display)' }}>0</button>
+          <button className="btn" onClick={() => setPin(p => p.slice(0,-1))} style={{ height: 48, fontSize: 16 }}>⌫</button>
+        </div>
+        <button className="btn" onClick={onCancel} style={{ width: '100%' }}>Cancel</button>
+      </div>
     </div>
   );
+}
+
+function Avatar({ name, index, size = 28, avatarId }) {
+  return <AvatarDisplay avatarId={avatarId} playerName={name} playerIndex={index} size={size} />;
 }
 
 function Toast({ message }) {
@@ -77,6 +104,7 @@ function SetupScreen() {
 
 // ---- LEADERBOARD ----
 function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
+  const [pinGameId, setPinGameId] = useState(null);
   const stats = buildStats(players, games);
   const sorted = [...players].sort((a, b) => {
     const wa = stats[a.id] ? stats[a.id].wins / (stats[a.id].wins + stats[a.id].losses || 1) : 0;
@@ -103,6 +131,18 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
 
   return (
     <div>
+      {pinGameId && (
+        <PinModal
+          title="Delete game?"
+          onConfirm={async () => {
+            const { error } = await supabase.from('games').delete({ count: 'exact' }).eq('id', pinGameId);
+            if (error) { alert('Delete failed: ' + error.message); }
+            else { toast('Game deleted.'); onRefresh(); }
+            setPinGameId(null);
+          }}
+          onCancel={() => setPinGameId(null)}
+        />
+      )}
       <div className="stat-grid">
         <div className="stat-box"><div className="stat-box-label">Games</div><div className="stat-box-val">{totalGames}</div></div>
         <div className="stat-box"><div className="stat-box-label">Players</div><div className="stat-box-val">{players.length}</div></div>
@@ -119,20 +159,22 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
             <table>
               <thead>
                 <tr>
-                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>Hole</th><th>Board</th><th>MVP</th>
+                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>Hole</th><th>Acc%</th><th>MVP</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((p, i) => {
-                  const s = stats[p.id] || { wins: 0, losses: 0, pts: 0, hole: 0, board: 0 };
+                  const s = stats[p.id] || { wins: 0, losses: 0, pts: 0, hole: 0, board: 0, mvps: 0 };
                   const total = s.wins + s.losses;
                   const pct = total ? Math.round(s.wins / total * 100) : 0;
+                  const totalBags = s.hole + s.board;
+                  const acc = totalBags > 0 ? Math.round(s.hole / totalBags * 100) : 0;
                   return (
                     <tr key={p.id}>
                       <td><span className={`rank-num${i === 0 && total > 0 ? ' gold' : ''}`}>{i === 0 && total > 0 ? '1' : i + 1}</span></td>
                       <td>
                         <div className="player-row">
-                          <Avatar name={p.name} index={players.indexOf(p)} />
+                          <Avatar name={p.name} index={players.indexOf(p)} avatarId={p.avatar_id} />
                           <span style={{ fontWeight: 500 }}>{p.name}</span>
                         </div>
                       </td>
@@ -141,7 +183,7 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
                       <td style={{ color: 'var(--text2)' }}>{pct}%</td>
                       <td style={{ color: 'var(--text2)' }}>{s.pts}</td>
                       <td style={{ color: 'var(--text2)' }}>{s.hole}</td>
-                      <td style={{ color: 'var(--text2)' }}>{s.board}</td>
+                      <td style={{ color: 'var(--text2)' }}>{acc}%</td>
                       <td style={{ color: s.mvps > 0 ? 'var(--accent)' : 'var(--text3)' }}>{s.mvps > 0 ? `⭐${s.mvps}` : '—'}</td>
                     </tr>
                   );
@@ -172,13 +214,7 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
                     <span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span>
                   </div>
                   <div className={`game-team${!t1win ? ' winner' : ''}`} style={{ textAlign: 'right' }}>{t2p1} & {t2p2}</div>
-                  <button className="btn btn-sm btn-danger" onClick={async () => {
-                    if (!window.confirm('Delete this game?')) return;
-                    const { error } = await supabase.from('games').delete({ count: 'exact' }).eq('id', g.id);
-                    if (error) { alert('Delete failed: ' + error.message); return; }
-                    toast('Game deleted.');
-                    onRefresh();
-                  }}>✕</button>
+                  <button className="btn btn-sm btn-danger" onClick={() => setPinGameId(g.id)}>✕</button>
                 </div>
                 {g.mvp_player_ids?.length > 0 && (
                   <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 3 }}>
@@ -218,6 +254,10 @@ function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, p
 }
 
 // ---- STEPPER ----
+function haptic() {
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
 function Stepper({ value, onChange, max = 4 }) {
   const val = parseInt(value) || 0;
   const atMax = val >= max;
@@ -225,13 +265,13 @@ function Stepper({ value, onChange, max = 4 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
       <button
-        onClick={() => { if (!atMin) onChange(val - 1); }}
+        onClick={() => { if (!atMin) { haptic(); onChange(val - 1); } }}
         disabled={atMin}
         style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: atMin ? 'var(--text3)' : 'var(--text2)', fontSize: 18, cursor: atMin ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
       >−</button>
       <span style={{ width: 28, textAlign: 'center', fontFamily: 'var(--font-display)', fontSize: 20, color: val > 0 ? 'var(--text)' : 'var(--text3)', userSelect: 'none' }}>{val}</span>
       <button
-        onClick={() => { if (!atMax) onChange(val + 1); }}
+        onClick={() => { if (!atMax) { haptic(); onChange(val + 1); } }}
         disabled={atMax}
         style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: atMax ? 'var(--text3)' : 'var(--text2)', fontSize: 18, cursor: atMax ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
       >+</button>
@@ -498,6 +538,7 @@ function Players({ players, onRefresh, toast }) {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [editingAvatar, setEditingAvatar] = useState(null);
 
   async function addPlayer() {
     const trimmed = name.trim();
@@ -518,6 +559,12 @@ function Players({ players, onRefresh, toast }) {
     toast('Player removed.'); onRefresh();
   }
 
+  async function saveAvatar(playerId, avatarId) {
+    await supabase.from('players').update({ avatar_id: avatarId }).eq('id', playerId);
+    setEditingAvatar(null);
+    onRefresh();
+  }
+
   return (
     <div>
       <div className="card">
@@ -533,13 +580,29 @@ function Players({ players, onRefresh, toast }) {
           </button>
         </div>
       </div>
+
+      {editingAvatar && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, overflow: 'auto', padding: '1rem' }}>
+          <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '1.25rem', maxWidth: 400, margin: '0 auto' }}>
+            <AvatarPicker
+              currentAvatarId={players.find(p => p.id === editingAvatar)?.avatar_id}
+              onSelect={(avatarId) => saveAvatar(editingAvatar, avatarId)}
+            />
+            <button className="btn" onClick={() => setEditingAvatar(null)} style={{ width: '100%', marginTop: 12 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="card-title">Roster ({players.length})</div>
         {players.length === 0 ? <div className="empty">No players yet.</div> : (
           players.map((p, i) => (
             <div key={p.id} className="player-chip">
-              <Avatar name={p.name} index={i} size={32} />
+              <div onClick={() => setEditingAvatar(p.id)} style={{ cursor: 'pointer' }}>
+                <Avatar name={p.name} index={i} size={36} avatarId={p.avatar_id} />
+              </div>
               <span className="player-chip-name">{p.name}</span>
+              <button className="btn btn-sm" onClick={() => setEditingAvatar(p.id)}>Avatar</button>
               <button className="btn btn-sm btn-danger" onClick={() => removePlayer(p.id, p.name)}>Remove</button>
             </div>
           ))
@@ -666,7 +729,7 @@ function buildStats(players, games) {
 }
 
 
-const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Tournament', 'Master'];
+const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Tournament', 'Master', 'Games'];
 
 export default function App() {
   const [tab, setTab] = useState('Leaderboard');
@@ -677,6 +740,7 @@ export default function App() {
   const [gameResult, setGameResult] = useState(null);
   const [specialBanner, setSpecialBanner] = useState(null);
   const [grudgeMatch, setGrudgeMatch] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(!localStorage.getItem('onboarded'));
   const latestGameId = useRef(null);
 
   const isConfigured = process.env.REACT_APP_SUPABASE_URL && process.env.REACT_APP_SUPABASE_ANON_KEY
@@ -825,6 +889,10 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
 
   if (!isConfigured) return <SetupScreen />;
 
+  if (showOnboarding && players.length > 0) {
+    return <Onboarding players={players} onComplete={(playerId) => { setShowOnboarding(false); }} />;
+  }
+
   return (
     <>
       <header className="header">
@@ -856,6 +924,7 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
             {tab === 'H2H' && <HeadToHead players={players} games={games} />}
             {tab === 'Tournament' && <TournamentTab players={players} games={games} toast={showToast} />}
             {tab === 'Master' && <MasterCornholerTab players={players} games={games} />}
+            {tab === 'Games' && <GamesTab players={players} games={games} onRefresh={fetchData} />}
           </>
         )}
       </main>
