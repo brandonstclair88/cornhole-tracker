@@ -749,7 +749,7 @@ function MasterCornholer({ players, games }) {
   );
 }
 
-const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Master'];
+const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Tournament', 'Master', 'Games'];
 
 export default function App() {
   const [tab, setTab] = useState('Leaderboard');
