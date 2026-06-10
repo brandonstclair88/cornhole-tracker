@@ -1,58 +1,27 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './index.css';
 import { supabase } from './supabase';
-import { OneSignalManager } from './OneSignalManager';
-import { calculateMVP } from './tournamentUtils';
-import TournamentTab from './TournamentTab';
-import MasterCornholerTab from './MasterCornholer';
-import GamesTab from './GamesTab';
-import Onboarding from './Onboarding';
-import { AvatarDisplay, AvatarPicker } from './Avatars';
 
-// PIN Modal
-function PinModal({ onConfirm, onCancel, title = 'Enter PIN' }) {
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState('');
+const AVATAR_COLORS = [
+  { bg: '#2a2318', fg: '#e8c547' },
+  { bg: '#1a2820', fg: '#4caf82' },
+  { bg: '#251818', fg: '#e05c5c' },
+  { bg: '#1a2030', fg: '#6ba3e0' },
+  { bg: '#221a28', fg: '#b07ee0' },
+  { bg: '#1f2018', fg: '#8ec44a' },
+];
 
-  function handleDigit(d) {
-    if (pin.length < 4) {
-      const next = pin + d;
-      setPin(next);
-      if (next.length === 4) {
-        if (next === '4399') { onConfirm(); }
-        else { setError('Wrong PIN'); setPin(''); }
-      }
-    }
-  }
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem', width: '100%', maxWidth: 300 }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--accent)', marginBottom: 12 }}>{title}</div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 12 }}>
-          {[0,1,2,3].map(i => (
-            <div key={i} style={{ width: 40, height: 48, border: '1px solid var(--border2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'var(--accent)' }}>
-              {pin.length > i ? '●' : ''}
-            </div>
-          ))}
-        </div>
-        {error && <div style={{ color: 'var(--red)', fontSize: 12, textAlign: 'center', marginBottom: 8 }}>{error}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 8 }}>
-          {[1,2,3,4,5,6,7,8,9].map(d => (
-            <button key={d} className="btn" onClick={() => handleDigit(String(d))} style={{ height: 48, fontSize: 20, fontFamily: 'var(--font-display)' }}>{d}</button>
-          ))}
-          <div/>
-          <button className="btn" onClick={() => handleDigit('0')} style={{ height: 48, fontSize: 20, fontFamily: 'var(--font-display)' }}>0</button>
-          <button className="btn" onClick={() => setPin(p => p.slice(0,-1))} style={{ height: 48, fontSize: 16 }}>⌫</button>
-        </div>
-        <button className="btn" onClick={onCancel} style={{ width: '100%' }}>Cancel</button>
-      </div>
-    </div>
-  );
+function initials(name) {
+  return (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-function Avatar({ name, index, size = 28, avatarId }) {
-  return <AvatarDisplay avatarId={avatarId} playerName={name} playerIndex={index} size={size} />;
+function Avatar({ name, index, size = 28 }) {
+  const c = AVATAR_COLORS[(index || 0) % AVATAR_COLORS.length];
+  return (
+    <div className="avatar" style={{ width: size, height: size, minWidth: size, background: c.bg, color: c.fg, fontSize: size * 0.38 }}>
+      {initials(name)}
+    </div>
+  );
 }
 
 function Toast({ message }) {
@@ -103,8 +72,7 @@ function SetupScreen() {
 }
 
 // ---- LEADERBOARD ----
-function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
-  const [pinGameId, setPinGameId] = useState(null);
+function Leaderboard({ players, games, onRefresh, toast }) {
   const stats = buildStats(players, games);
   const sorted = [...players].sort((a, b) => {
     const wa = stats[a.id] ? stats[a.id].wins / (stats[a.id].wins + stats[a.id].losses || 1) : 0;
@@ -131,18 +99,6 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
 
   return (
     <div>
-      {pinGameId && (
-        <PinModal
-          title="Delete game?"
-          onConfirm={async () => {
-            const { error } = await supabase.from('games').delete({ count: 'exact' }).eq('id', pinGameId);
-            if (error) { alert('Delete failed: ' + error.message); }
-            else { toast('Game deleted.'); onRefresh(); }
-            setPinGameId(null);
-          }}
-          onCancel={() => setPinGameId(null)}
-        />
-      )}
       <div className="stat-grid">
         <div className="stat-box"><div className="stat-box-label">Games</div><div className="stat-box-val">{totalGames}</div></div>
         <div className="stat-box"><div className="stat-box-label">Players</div><div className="stat-box-val">{players.length}</div></div>
@@ -159,22 +115,20 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
             <table>
               <thead>
                 <tr>
-                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>Hole</th><th>Acc%</th><th>MVP</th>
+                  <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Pts</th><th>Hole</th><th>Board</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((p, i) => {
-                  const s = stats[p.id] || { wins: 0, losses: 0, pts: 0, hole: 0, board: 0, mvps: 0 };
+                  const s = stats[p.id] || { wins: 0, losses: 0, pts: 0, hole: 0, board: 0 };
                   const total = s.wins + s.losses;
                   const pct = total ? Math.round(s.wins / total * 100) : 0;
-                  const totalBags = s.hole + s.board;
-                  const acc = totalBags > 0 ? Math.round(s.hole / totalBags * 100) : 0;
                   return (
                     <tr key={p.id}>
                       <td><span className={`rank-num${i === 0 && total > 0 ? ' gold' : ''}`}>{i === 0 && total > 0 ? '1' : i + 1}</span></td>
                       <td>
                         <div className="player-row">
-                          <Avatar name={p.name} index={players.indexOf(p)} avatarId={p.avatar_id} />
+                          <Avatar name={p.name} index={players.indexOf(p)} />
                           <span style={{ fontWeight: 500 }}>{p.name}</span>
                         </div>
                       </td>
@@ -183,8 +137,7 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
                       <td style={{ color: 'var(--text2)' }}>{pct}%</td>
                       <td style={{ color: 'var(--text2)' }}>{s.pts}</td>
                       <td style={{ color: 'var(--text2)' }}>{s.hole}</td>
-                      <td style={{ color: 'var(--text2)' }}>{acc}%</td>
-                      <td style={{ color: s.mvps > 0 ? 'var(--accent)' : 'var(--text3)' }}>{s.mvps > 0 ? `⭐${s.mvps}` : '—'}</td>
+                      <td style={{ color: 'var(--text2)' }}>{s.board}</td>
                     </tr>
                   );
                 })}
@@ -205,26 +158,25 @@ function Leaderboard({ players, games, onRefresh, toast, onGrudgeMatch }) {
             const t2p2 = players.find(p => p.id === g.t2_p2)?.name || '?';
             return (
               <div key={g.id} style={{ paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid var(--border)' }}>
-                <div className="game-row" style={{ borderBottom: 'none', marginBottom: 4, paddingBottom: 0 }}>
+                <div className="game-row" style={{ borderBottom: 'none', marginBottom: g.trash_talk ? 6 : 0, paddingBottom: 0 }}>
                   <div className={`game-team${t1win ? ' winner' : ''}`}>{t1p1} & {t1p2}</div>
                   <div className="game-score-block">
-                    {g.is_tournament && <span style={{ fontSize: 10, background: 'rgba(232,197,71,0.15)', color: 'var(--accent)', padding: '1px 5px', borderRadius: 3, marginRight: 4 }}>T</span>}
                     <span className={`badge ${t1win ? 'badge-win' : 'badge-loss'}`}>{g.t1_score}</span>
                     <span style={{ color: 'var(--text3)', fontSize: 11 }}>–</span>
                     <span className={`badge ${!t1win ? 'badge-win' : 'badge-loss'}`}>{g.t2_score}</span>
                   </div>
                   <div className={`game-team${!t1win ? ' winner' : ''}`} style={{ textAlign: 'right' }}>{t2p1} & {t2p2}</div>
-                  <button className="btn btn-sm btn-danger" onClick={() => setPinGameId(g.id)}>✕</button>
+                  <button className="btn btn-sm btn-danger" onClick={async () => {
+                    if (!window.confirm('Delete this game?')) return;
+                    const { error } = await supabase.from('games').delete({ count: 'exact' }).eq('id', g.id);
+                    if (error) { alert('Delete failed: ' + error.message); return; }
+                    toast('Game deleted.');
+                    onRefresh();
+                  }}>✕</button>
                 </div>
-                {g.mvp_player_ids?.length > 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 3 }}>
-                    ⭐ MVP: {g.mvp_player_ids.map(id => players.find(p => p.id === id)?.name || '?').join(' & ')}
-                  </div>
-                )}
                 {g.trash_talk && (
-                  <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic', paddingLeft: 2, marginBottom: 4 }}>"{g.trash_talk}"</div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic', paddingLeft: 2 }}>"{g.trash_talk}"</div>
                 )}
-                <button className="btn btn-sm" onClick={() => onGrudgeMatch && onGrudgeMatch(g)} style={{ fontSize: 11, marginTop: 2 }}>🔄 Rematch</button>
               </div>
             );
           })}
@@ -254,10 +206,6 @@ function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, p
 }
 
 // ---- STEPPER ----
-function haptic() {
-  if (navigator.vibrate) navigator.vibrate(10);
-}
-
 function Stepper({ value, onChange, max = 4 }) {
   const val = parseInt(value) || 0;
   const atMax = val >= max;
@@ -265,13 +213,13 @@ function Stepper({ value, onChange, max = 4 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
       <button
-        onClick={() => { if (!atMin) { haptic(); onChange(val - 1); } }}
+        onClick={() => { if (!atMin) onChange(val - 1); }}
         disabled={atMin}
         style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: atMin ? 'var(--text3)' : 'var(--text2)', fontSize: 18, cursor: atMin ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
       >−</button>
       <span style={{ width: 28, textAlign: 'center', fontFamily: 'var(--font-display)', fontSize: 20, color: val > 0 ? 'var(--text)' : 'var(--text3)', userSelect: 'none' }}>{val}</span>
       <button
-        onClick={() => { if (!atMax) { haptic(); onChange(val + 1); } }}
+        onClick={() => { if (!atMax) onChange(val + 1); }}
         disabled={atMax}
         style={{ width: 36, height: 36, border: 'none', background: 'transparent', color: atMax ? 'var(--text3)' : 'var(--text2)', fontSize: 18, cursor: atMax ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}
       >+</button>
@@ -294,7 +242,7 @@ function calcScores(rounds) {
   return { t1, t2 };
 }
 
-function LogGame({ players, onGameLogged, toast, grudgeMatch, onGrudgeMatchUsed }) {
+function LogGame({ players, onGameLogged, toast }) {
   const [t1p1, setT1p1] = useState('');
   const [t1p2, setT1p2] = useState('');
   const [t2p1, setT2p1] = useState('');
@@ -306,19 +254,13 @@ function LogGame({ players, onGameLogged, toast, grudgeMatch, onGrudgeMatchUsed 
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (grudgeMatch) {
-      setT1p1(grudgeMatch.t1_p1 || '');
-      setT1p2(grudgeMatch.t1_p2 || '');
-      setT2p1(grudgeMatch.t2_p1 || '');
-      setT2p2(grudgeMatch.t2_p2 || '');
-      onGrudgeMatchUsed && onGrudgeMatchUsed();
-    } else if (players.length >= 4) {
+    if (players.length >= 4) {
       setT1p1(players[0].id); setT1p2(players[1].id);
       setT2p1(players[2].id); setT2p2(players[3].id);
     } else if (players.length >= 2) {
       setT1p1(players[0].id); setT1p2(players[1].id);
     }
-  }, [players, grudgeMatch]);
+  }, [players]);
 
   const playerOptions = players.map(p => <option key={p.id} value={p.id}>{p.name}</option>);
   const getName = id => players.find(p => p.id === id)?.name || '?';
@@ -538,7 +480,6 @@ function Players({ players, onRefresh, toast }) {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [editingAvatar, setEditingAvatar] = useState(null);
 
   async function addPlayer() {
     const trimmed = name.trim();
@@ -559,12 +500,6 @@ function Players({ players, onRefresh, toast }) {
     toast('Player removed.'); onRefresh();
   }
 
-  async function saveAvatar(playerId, avatarId) {
-    await supabase.from('players').update({ avatar_id: avatarId }).eq('id', playerId);
-    setEditingAvatar(null);
-    onRefresh();
-  }
-
   return (
     <div>
       <div className="card">
@@ -580,29 +515,13 @@ function Players({ players, onRefresh, toast }) {
           </button>
         </div>
       </div>
-
-      {editingAvatar && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, overflow: 'auto', padding: '1rem' }}>
-          <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '1.25rem', maxWidth: 400, margin: '0 auto' }}>
-            <AvatarPicker
-              currentAvatarId={players.find(p => p.id === editingAvatar)?.avatar_id}
-              onSelect={(avatarId) => saveAvatar(editingAvatar, avatarId)}
-            />
-            <button className="btn" onClick={() => setEditingAvatar(null)} style={{ width: '100%', marginTop: 12 }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
       <div className="card">
         <div className="card-title">Roster ({players.length})</div>
         {players.length === 0 ? <div className="empty">No players yet.</div> : (
           players.map((p, i) => (
             <div key={p.id} className="player-chip">
-              <div onClick={() => setEditingAvatar(p.id)} style={{ cursor: 'pointer' }}>
-                <Avatar name={p.name} index={i} size={36} avatarId={p.avatar_id} />
-              </div>
+              <Avatar name={p.name} index={i} size={32} />
               <span className="player-chip-name">{p.name}</span>
-              <button className="btn btn-sm" onClick={() => setEditingAvatar(p.id)}>Avatar</button>
               <button className="btn btn-sm btn-danger" onClick={() => removePlayer(p.id, p.name)}>Remove</button>
             </div>
           ))
@@ -699,7 +618,7 @@ function HeadToHead({ players, games }) {
 // ---- HELPERS ----
 function buildStats(players, games) {
   const stats = {};
-  players.forEach(p => { stats[p.id] = { wins: 0, losses: 0, pts: 0, hole: 0, board: 0, mvps: 0 }; });
+  players.forEach(p => { stats[p.id] = { wins: 0, losses: 0, pts: 0, hole: 0, board: 0 }; });
   games.forEach(g => {
     const t1win = g.t1_score > g.t2_score;
     const playerBags = {
@@ -719,17 +638,118 @@ function buildStats(players, games) {
         stats[pid].board += playerBags[pid]?.board || 0;
       });
     });
-    if (g.mvp_player_ids) {
-      g.mvp_player_ids.forEach(pid => {
-        if (stats[pid]) stats[pid].mvps++;
-      });
-    }
   });
   return stats;
 }
 
+// ---- MASTER CORNHOLER ----
+function MasterCornholer({ players, games }) {
+  // Get start of current week (Monday)
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon...
+  const diffToMonday = (day === 0 ? -6 : 1 - day);
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() + diffToMonday);
+  weekStart.setHours(0, 0, 0, 0);
 
-const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Tournament', 'Master', 'Games'];
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+
+  const weekGames = games.filter(g => {
+    const d = new Date(g.played_at);
+    return d >= weekStart && d <= weekEnd;
+  });
+
+  const stats = buildStats(players, weekGames);
+  const qualified = players.filter(p => (stats[p.id]?.wins || 0) + (stats[p.id]?.losses || 0) > 0);
+  const sorted = [...qualified].sort((a, b) => {
+    const sa = stats[a.id]; const sb = stats[b.id];
+    const wa = sa.wins / (sa.wins + sa.losses); const wb = sb.wins / (sb.wins + sb.losses);
+    if (wb !== wa) return wb - wa;
+    return sb.wins - sa.wins;
+  });
+
+  const leader = sorted[0];
+  const leaderStats = leader ? stats[leader.id] : null;
+  const leaderIndex = leader ? players.indexOf(leader) : 0;
+  const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+  return (
+    <div>
+      <div className="card" style={{ textAlign: 'center', padding: '2rem 1.25rem' }}>
+        <div style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text3)', marginBottom: 8 }}>Week of {weekLabel}</div>
+        {!leader ? (
+          <div className="empty" style={{ padding: '1.5rem 0' }}>No games played this week yet.</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 48, marginBottom: 8 }}>🏆</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '1px', color: 'var(--text3)', marginBottom: 4 }}>Master Cornholer</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 48, color: 'var(--accent)', lineHeight: 1, marginBottom: 16 }}>{leader.name}</div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">Wins</div>
+                <div className="stat-box-val" style={{ color: 'var(--green)' }}>{leaderStats.wins}</div>
+              </div>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">Losses</div>
+                <div className="stat-box-val" style={{ color: 'var(--red)' }}>{leaderStats.losses}</div>
+              </div>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">Win %</div>
+                <div className="stat-box-val">{Math.round(leaderStats.wins / (leaderStats.wins + leaderStats.losses) * 100)}%</div>
+              </div>
+              <div className="stat-box" style={{ minWidth: 90 }}>
+                <div className="stat-box-label">Hole</div>
+                <div className="stat-box-val">{leaderStats.hole}</div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {sorted.length > 1 && (
+        <div className="card">
+          <div className="card-title">This Week's Rankings</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Hole</th><th>Board</th></tr>
+              </thead>
+              <tbody>
+                {sorted.map((p, i) => {
+                  const s = stats[p.id];
+                  const pct = Math.round(s.wins / (s.wins + s.losses) * 100);
+                  return (
+                    <tr key={p.id}>
+                      <td><span className={`rank-num${i === 0 ? ' gold' : ''}`}>{i + 1}</span></td>
+                      <td>
+                        <div className="player-row">
+                          <Avatar name={p.name} index={players.indexOf(p)} />
+                          <span style={{ fontWeight: 500 }}>{p.name}</span>
+                        </div>
+                      </td>
+                      <td><span className="badge badge-win">{s.wins}</span></td>
+                      <td><span className="badge badge-loss">{s.losses}</span></td>
+                      <td style={{ color: 'var(--text2)' }}>{pct}%</td>
+                      <td style={{ color: 'var(--text2)' }}>{s.hole}</td>
+                      <td style={{ color: 'var(--text2)' }}>{s.board}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 12 }}>
+            {weekGames.length} game{weekGames.length !== 1 ? 's' : ''} played this week. Resets every Monday.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TABS = ['Leaderboard', 'Log Game', 'Players', 'H2H', 'Master'];
 
 export default function App() {
   const [tab, setTab] = useState('Leaderboard');
@@ -738,18 +758,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState('');
   const [gameResult, setGameResult] = useState(null);
-  const [specialBanner, setSpecialBanner] = useState(null);
-  const [grudgeMatch, setGrudgeMatch] = useState(null);
-  const [showOnboarding, setShowOnboarding] = useState(!localStorage.getItem('onboarded'));
   const latestGameId = useRef(null);
 
   const isConfigured = process.env.REACT_APP_SUPABASE_URL && process.env.REACT_APP_SUPABASE_ANON_KEY
     && process.env.REACT_APP_SUPABASE_URL !== 'YOUR_SUPABASE_URL';
-
-  // Initialize OneSignal
-  useEffect(() => {
-    OneSignalManager.initialize();
-  }, []);
 
   const showToast = useCallback((msg) => {
     setToastMsg(msg);
@@ -779,12 +791,6 @@ export default function App() {
       (ps || []).forEach(p => { playerMap[p.id] = p.name; });
       const getName = id => playerMap[id] || '?';
 
-      // Calculate and save MVP
-      const mvpIds = calculateMVP(game);
-      if (mvpIds.length > 0) {
-        await supabase.from('games').update({ mvp_player_ids: mvpIds }).eq('id', game.id);
-      }
-
       const t1wins = game.t1_score > game.t2_score;
       const winners = t1wins ? `${getName(game.t1_p1)} & ${getName(game.t1_p2)}` : `${getName(game.t2_p1)} & ${getName(game.t2_p2)}`;
       const losers = t1wins ? `${getName(game.t2_p1)} & ${getName(game.t2_p2)}` : `${getName(game.t1_p1)} & ${getName(game.t1_p2)}`;
@@ -792,8 +798,6 @@ export default function App() {
       const loseScore = t1wins ? game.t2_score : game.t1_score;
       const margin = winScore - loseScore;
 
-      // Check special events
-      const isShutout = loseScore === 0;
       const t1hole = (game.t1_p1_hole||0) + (game.t1_p2_hole||0);
       const t1board = (game.t1_p1_board||0) + (game.t1_p2_board||0);
       const t2hole = (game.t2_p1_hole||0) + (game.t2_p2_hole||0);
@@ -804,12 +808,6 @@ export default function App() {
       const loseHole = t1wins ? t2hole : t1hole;
       const winBoard = t1wins ? t1board : t2board;
       const loseBoard = t1wins ? t2board : t1board;
-
-      // Special event banners
-      if (isShutout) {
-        setSpecialBanner({ emoji: '💀', title: 'SHUTOUT', message: `${losers} got absolutely zero points. Someone check on them.` });
-        await OneSignalManager.notifyShutout(losers);
-      }
 
       const isBlowout = margin >= 9;
       const isClose = margin <= 2;
@@ -828,10 +826,6 @@ export default function App() {
       else if (isClose) context = 'Extremely close game, came down to the wire. Make it sound like the most dramatic moment in sports history.';
       else context = `Solid win for ${winners}. Be cocky about the winners and throw mild shade at the losers.`;
 
-      // Random style for variety
-      const styles = ['sports commentator', 'disappointed coach', 'deadpan reporter', 'soap opera narrator', 'shocked witness', 'hype man', 'reality TV host', 'retired athlete analyst', 'movie trailer voice', 'tabloid journalist'];
-      const style = styles[Math.floor(Math.random() * styles.length)];
-
       setGameResult(`${winners} beat ${losers} ${winScore}–${loseScore}...`);
 
       try {
@@ -846,28 +840,25 @@ export default function App() {
           },
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
-            max_tokens: 150,
-            temperature: 1.0,
+            max_tokens: 120,
             messages: [{
               role: 'user',
-              content: `You are the meanest, funniest trash-talking sports announcer in history. You work for a cornhole league at someone's job. Write ONE brutal notification (1-2 sentences, no quotes, no emojis) about this game. Use their actual names. Write in the style of a ${style}. Be creative, unpredictable, and savage — never generic. Never use these words: dominated, crushed, obliterated, destroyed, demolished, stellar, impressive, came out on top, secured the win, battle it out, faced off, at the end of the day.
+              content: `You are a trash-talking sports announcer for a work cornhole league. Write ONE short notification (1-2 sentences, no quotes, no emojis) about this game. Be funny, savage, and use their actual names. DO NOT just state the score.
 
 Winners: ${winners} (score: ${winScore}, holes: ${winHole}, on board: ${winBoard})
 Losers: ${losers} (score: ${loseScore}, holes: ${loseHole}, on board: ${loseBoard})
 Total bags thrown: ${totalBags}, total holes: ${totalHole}
 
-Tone: ${context}
-
-Be unpredictable. Make it feel like a different person wrote it every time.`
+Tone: ${context}`
             }]
           })
         });
         const data = await res.json();
+        console.log('API response:', JSON.stringify(data));
         const msg = data.content?.[0]?.text;
         if (msg) {
           setGameResult(msg);
           await supabase.from('games').update({ trash_talk: msg }).eq('id', game.id);
-          await OneSignalManager.notifyGameResult(winners, losers, winScore, loseScore, msg);
           await fetchData();
         }
       } catch(e) {
@@ -888,10 +879,6 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
   }, [fetchData, handleGameChange, isConfigured]);
 
   if (!isConfigured) return <SetupScreen />;
-
-  if (showOnboarding && players.length > 0) {
-    return <Onboarding players={players} onComplete={(playerId) => { setShowOnboarding(false); }} />;
-  }
 
   return (
     <>
@@ -918,33 +905,15 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
       <main className="main">
         {loading ? <Loading /> : (
           <>
-            {tab === 'Leaderboard' && <Leaderboard players={players} games={games} onRefresh={fetchData} toast={showToast} onGrudgeMatch={(g) => { setGrudgeMatch(g); setTab('Log Game'); }} />}
-            {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} grudgeMatch={grudgeMatch} onGrudgeMatchUsed={() => setGrudgeMatch(null)} />}
+            {tab === 'Leaderboard' && <Leaderboard players={players} games={games} onRefresh={fetchData} toast={showToast} />}
+            {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} />}
             {tab === 'Players' && <Players players={players} onRefresh={fetchData} toast={showToast} />}
             {tab === 'H2H' && <HeadToHead players={players} games={games} />}
-            {tab === 'Tournament' && <TournamentTab players={players} games={games} toast={showToast} />}
-            {tab === 'Master' && <MasterCornholerTab players={players} games={games} />}
-            {tab === 'Games' && <GamesTab players={players} games={games} onRefresh={fetchData} />}
+            {tab === 'Master' && <MasterCornholer players={players} games={games} />}
           </>
         )}
       </main>
       <Toast message={toastMsg} />
-      {specialBanner && (
-        <div style={{
-          position: 'fixed', top: '1rem', left: '1rem', right: '1rem',
-          background: 'var(--surface)', border: '1px solid var(--accent)',
-          borderRadius: 'var(--radius)', padding: '12px 16px',
-          zIndex: 9998, boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-          display: 'flex', alignItems: 'center', gap: 10
-        }}>
-          <span style={{ fontSize: 24 }}>{specialBanner.emoji}</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent)', fontWeight: 500 }}>{specialBanner.title}</div>
-            <div style={{ fontSize: 13, color: 'var(--text)' }}>{specialBanner.message}</div>
-          </div>
-          <button onClick={() => setSpecialBanner(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 18, cursor: 'pointer' }}>✕</button>
-        </div>
-      )}
       <GameResultBanner result={gameResult} onDismiss={() => setGameResult(null)} />
     </>
   );
