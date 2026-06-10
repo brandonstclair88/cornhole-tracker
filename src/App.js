@@ -256,6 +256,19 @@ function BagInputRow({ label, name, hole, board, onHole, onBoard, playerIndex, p
 // ---- STEPPER ----
 function haptic() {
   if (navigator.vibrate) navigator.vibrate(10);
+  // Audio click for iOS
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 1200;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.04);
+  } catch(e) {}
 }
 
 function Stepper({ value, onChange, max = 4 }) {
@@ -954,4 +967,3 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
     </>
   );
 }
-// Tue Jun  9 22:23:18 PDT 2026
