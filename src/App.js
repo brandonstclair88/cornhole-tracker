@@ -534,7 +534,7 @@ function setRoundVal(ri, key, val) {
 }
 
 // ---- PLAYERS ----
-function Players({ players, onRefresh, toast }) {
+function Players({ players, onRefresh, toast, setPlayers }) {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -560,10 +560,13 @@ function Players({ players, onRefresh, toast }) {
   }
 
   async function saveAvatar(playerId, avatarId) {
-    await supabase.from('players').update({ avatar_id: avatarId }).eq('id', playerId);
-    await onRefresh();
+    const { error } = await supabase.from('players').update({ avatar_id: avatarId }).eq('id', playerId);
+    if (error) { toast('Failed to save'); return; }
+    // Immediately update local state so UI reflects change right away
+    setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, avatar_id: avatarId } : p));
     setEditingAvatar(null);
     toast('Avatar updated!');
+    onRefresh();
   }
 
   return (
@@ -921,7 +924,7 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
           <>
             {tab === 'Leaderboard' && <Leaderboard players={players} games={games} onRefresh={fetchData} toast={showToast} onGrudgeMatch={(g) => { setGrudgeMatch(g); setTab('Log Game'); }} />}
             {tab === 'Log Game' && <LogGame players={players} onGameLogged={fetchData} toast={showToast} grudgeMatch={grudgeMatch} onGrudgeMatchUsed={() => setGrudgeMatch(null)} />}
-            {tab === 'Players' && <Players players={players} onRefresh={fetchData} toast={showToast} />}
+            {tab === 'Players' && <Players players={players} onRefresh={fetchData} toast={showToast} setPlayers={setPlayers} />}
             {tab === 'H2H' && <HeadToHead players={players} games={games} />}
             {tab === 'Tournament' && <TournamentTab players={players} games={games} toast={showToast} />}
             {tab === 'Master' && <MasterCornholerTab players={players} games={games} />}
