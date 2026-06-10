@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './index.css';
 import { supabase } from './supabase';
+import { AvatarDisplay, AvatarPicker } from './Avatars';
+import TournamentTab from './TournamentTab';
+import MasterCornholerTab from './MasterCornholer';
+import GamesTab from './GamesTab';
+import Onboarding from './Onboarding';
 
 const AVATAR_COLORS = [
   { bg: '#2a2318', fg: '#e8c547' },
