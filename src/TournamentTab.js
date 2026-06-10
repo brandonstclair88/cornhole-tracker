@@ -595,8 +595,6 @@ export default function TournamentTab({ players, games, toast }) {
     toast(`${getName(playerId)} added to the session!`);
     loadData();
   }
-
-  async function getBagForecast() {
     if (!dbSession?.team1_p1) return;
     setForecastLoading(true);
     const t1 = `${getName(dbSession.team1_p1)} & ${getName(dbSession.team1_p2)}`;
@@ -677,6 +675,26 @@ export default function TournamentTab({ players, games, toast }) {
                   </button>
                 )}
               </div>
+
+              {/* Test mode simulate button */}
+              {testMode && players.length >= 4 && (
+                <button className="btn btn-primary" onClick={async () => {
+                  const s = await ensureSession();
+                  if (!s) return;
+                  // Check in first 4+ players
+                  const toCheckin = players.slice(0, Math.min(6, players.length));
+                  for (const p of toCheckin) {
+                    const already = checkins.find(c => c.player_id === p.id);
+                    if (!already) {
+                      await supabase.from('tournament_checkins').insert({ session_id: s.id, player_id: p.id });
+                    }
+                  }
+                  await loadData();
+                  toast('Players checked in — now lock the session!');
+                }} style={{ width: '100%', marginBottom: 8 }}>
+                  🧪 Simulate Check-in ({Math.min(6, players.length)} players)
+                </button>
+              )}
 
               {checkins.length > 0 && (
                 <>
