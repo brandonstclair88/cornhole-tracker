@@ -594,6 +594,24 @@ export default function TournamentTab({ players, games, toast }) {
     await supabase.from('tournament_checkins').insert({ session_id: dbSession.id, player_id: playerId });
     toast(`${getName(playerId)} added to the session!`);
     loadData();
+  }
+
+  async function getBagForecast() {
+    if (!dbSession?.team1_p1) return;
+    setForecastLoading(true);
+    const t1 = getName(dbSession.team1_p1) + ' & ' + getName(dbSession.team1_p2);
+    const t2 = getName(dbSession.team2_p1) + ' & ' + getName(dbSession.team2_p2);
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.REACT_APP_ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 100, temperature: 1.0, messages: [{ role: 'user', content: 'Ridiculous fake cornhole prediction, 2 sentences, no emojis, no quotes. Teams: ' + t1 + ' vs ' + t2 + '. Absurd fake stats.' }] })
+      });
+      const data = await res.json();
+      setBagForecast(data.content?.[0]?.text || 'The oracle is offline. Just play.');
+    } catch { setBagForecast('The oracle is offline. Just play.'); }
+    setForecastLoading(false);
+  }
 
   const myCheckin = checkins.find(c => c.player_id === myPlayerId);
   const isInProgress = dbSession?.status === 'in_progress';
