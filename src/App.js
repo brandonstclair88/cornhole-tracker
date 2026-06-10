@@ -560,12 +560,10 @@ function Players({ players, onRefresh, toast }) {
   }
 
   async function saveAvatar(playerId, avatarId) {
-    console.log('Saving avatar:', playerId, avatarId);
-    const { data, error } = await supabase.from('players').update({ avatar_id: avatarId }).eq('id', playerId).select();
-    console.log('Save result:', data, error);
+    await supabase.from('players').update({ avatar_id: avatarId }).eq('id', playerId);
+    await onRefresh();
     setEditingAvatar(null);
     toast('Avatar updated!');
-    onRefresh();
   }
 
   return (
