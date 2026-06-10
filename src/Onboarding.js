@@ -14,7 +14,7 @@ export default function Onboarding({ players, onComplete }) {
     await supabase.from('players').update({ avatar_id: selectedAvatar, onboarded: true }).eq('id', selectedPlayer.id);
     localStorage.setItem('myPlayerId', selectedPlayer.id);
     localStorage.setItem('onboarded', 'true');
-    onComplete(selectedPlayer.id);
+    onComplete(selectedPlayer.id, selectedAvatar);
   }
 
   if (step === 'welcome') {

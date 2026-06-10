@@ -892,7 +892,10 @@ Be unpredictable. Make it feel like a different person wrote it every time.`
   if (!isConfigured) return <SetupScreen />;
 
   if (showOnboarding && players.length > 0) {
-    return <Onboarding players={players} onComplete={(playerId) => { setShowOnboarding(false); }} />;
+    return <Onboarding players={players} onComplete={(playerId, avatarId) => {
+      if (avatarId) setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, avatar_id: avatarId } : p));
+      setShowOnboarding(false);
+    }} />;
   }
 
   return (
