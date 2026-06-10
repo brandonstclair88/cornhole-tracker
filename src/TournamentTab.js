@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
 import { AvatarDisplay } from './Avatars';
 
+const AVATAR_COLORS = [
+  { bg: '#2a2318', fg: '#e8c547' }, { bg: '#1a2820', fg: '#4caf82' },
+  { bg: '#251818', fg: '#e05c5c' }, { bg: '#1a2030', fg: '#6ba3e0' },
+  { bg: '#221a28', fg: '#b07ee0' }, { bg: '#1f2018', fg: '#8ec44a' },
+];
+
 function Avatar({ name, index, size = 28, avatarId }) {
   return <AvatarDisplay avatarId={avatarId} playerName={name} playerIndex={index} size={size} />;
 }
